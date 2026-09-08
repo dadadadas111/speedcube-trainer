@@ -21,6 +21,10 @@ export interface Settings {
   requireScrambleMatch: boolean;
   /** Dùng khối ảo bàn phím thay cho smart cube (để dùng thử / kiểm thử) */
   keyboardCube: boolean;
+  /** Kiểu vẽ khối: 3D xoay được, hay trải phẳng thấy đủ 6 mặt */
+  cubeView: '3d' | 'net';
+  /** Cho khối trên màn hình xoay theo con quay của cube thật */
+  useGyro: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -33,6 +37,8 @@ export const DEFAULT_SETTINGS: Settings = {
   targetMs: 20000,
   requireScrambleMatch: true,
   keyboardCube: false,
+  cubeView: '3d',
+  useGyro: false,
 };
 
 interface AppState {

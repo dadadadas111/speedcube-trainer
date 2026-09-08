@@ -3,6 +3,7 @@ import { useApp } from '../store/app';
 import { exportAll, importAll, db } from '../store/db';
 import { KEYMAP_HELP } from '../smartcube/virtual';
 import { cubeLink } from '../smartcube/connection';
+import CubeSync from '../components/CubeSync';
 
 export default function SettingsPage() {
   const { settings, updateSettings, sessions, sessionId, addSession, renameSession, deleteSession, setSession, bump } = useApp();
@@ -101,8 +102,8 @@ export default function SettingsPage() {
             </select>
           </Row>
           <Toggle
-            label="Bắt khối phải khớp scramble"
-            hint="Đồng hồ chỉ sẵn sàng khi khối thật đã đúng scramble."
+            label="Dẫn vặn scramble"
+            hint="App chỉ từng nước, bắt lỗi ngay khi vặn sai, và đồng hồ chỉ sẵn sàng khi scramble đã đúng. Tắt đi thì bắt đầu tính giờ từ nước đầu tiên bất kỳ."
             value={settings.requireScrambleMatch}
             onChange={(v) => void updateSettings({ requireScrambleMatch: v })}
           />
@@ -137,6 +138,41 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+      </section>
+
+      <section className="panel p-5">
+        <h2 className="text-base font-semibold">Hiển thị khối</h2>
+        <div className="mt-4 flex flex-col gap-3">
+          <Row label="Kiểu vẽ khối" hint="3D kéo xoay được; trải phẳng thấy đủ 6 mặt cùng lúc.">
+            <div className="flex gap-1">
+              <button
+                className={`btn !py-1 !text-[13px] ${settings.cubeView === '3d' ? '!border-cube-blue !text-cube-blue' : ''}`}
+                onClick={() => void updateSettings({ cubeView: '3d' })}
+              >
+                3D
+              </button>
+              <button
+                className={`btn !py-1 !text-[13px] ${settings.cubeView === 'net' ? '!border-cube-blue !text-cube-blue' : ''}`}
+                onClick={() => void updateSettings({ cubeView: 'net' })}
+              >
+                Trải phẳng
+              </button>
+            </div>
+          </Row>
+          <Toggle
+            label="Khối trên màn hình xoay theo tay"
+            hint="Dùng con quay trong cube. Thử nghiệm — tôi chưa kiểm chứng được với cube thật, nếu thấy xoay sai trục thì tắt đi và báo lại."
+            value={settings.useGyro}
+            onChange={(v) => void updateSettings({ useGyro: v })}
+          />
+        </div>
+      </section>
+
+      <section className="panel p-5">
+        <h2 className="text-base font-semibold">Khi app và khối thật lệch nhau</h2>
+        <div className="mt-3">
+          <CubeSync />
         </div>
       </section>
 

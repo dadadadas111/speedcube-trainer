@@ -24,10 +24,16 @@ qua HTTPS (hoặc bật cờ `chrome://flags/#unsafely-treat-insecure-origin-as-
 
 ## Bốn tính năng
 
-**1. Bấm giờ.** Scramble random-state chuẩn WCA. Khi đã kết nối cube, app so trạng thái
-khối thật với scramble và chỉ sẵn sàng khi khớp; đồng hồ tự chạy từ nước đầu tiên và tự
-dừng đúng lúc khối được giải xong, lấy mốc thời gian từ đồng hồ trong cube (chính xác hơn
+**1. Bấm giờ, có dẫn vặn scramble.** Scramble random-state chuẩn WCA. Khi đã kết nối
+cube, app dẫn bạn vặn từng nước: nước tiếp theo hiện to, nước đã vặn thì mờ đi, có thanh
+tiến độ. Vặn sai là báo ngay và **chỉ luôn cần vặn ngược lại những gì** để quay về đúng
+chỗ — không phải giải lại từ đầu. Xong scramble thì đồng hồ tự chạy từ nước đầu tiên và
+tự dừng đúng lúc khối được giải, lấy mốc thời gian từ đồng hồ trong cube (chính xác hơn
 đồng hồ máy vì không dính độ trễ bluetooth). Có +2, DNF, inspection, nhiều phiên tập.
+
+Việc dò tiến độ so khớp theo khoá bất biến-với-phép-quay, nên **bạn cầm khối kiểu gì cũng
+được** — chỉ cần thực hiện đúng ký hiệu trong hệ quy chiếu của chính mình. Khoá này vẫn
+phân biệt màu nên vặn nhầm mặt đối diện (cam thay vì đỏ) vẫn bị bắt lỗi.
 
 **2. Xem lại từng bước.** Mỗi solve được tách thành FB → SB → CMLL → EO → 4b → 4c
 (hoặc Cross → F2L → OLL → PLL). Phát lại đúng nhịp thật, tự dừng ở cuối mỗi bước, tua
@@ -44,6 +50,28 @@ nguyên nhân: **nhận dạng/nhìn trước** (dừng nhiều) hay **thực th
 Vào drill: app dựng case, chờ bạn vặn khối về đúng case rồi tự đếm giờ. Sau nhiều lần,
 app dựng biểu đồ thời gian trung vị của **từng nước** trong alg và chỉ ra nước nào bạn
 hay khựng — thường là chỗ phải đổi cách cầm.
+
+## Khi app và khối thật lệch nhau
+
+Hai kiểu lệch, hai cách xử lý khác nhau, đều có nút riêng ở trang Bấm giờ và trong Cài đặt:
+
+- **App lệch so với cube** — rớt nước qua bluetooth. Cube vẫn biết đúng, chỉ cần
+  *Hỏi lại cube*. App cũng tự sửa mỗi khi cube gửi trạng thái về, và đếm số lần lệch.
+- **Chính cube lệch so với thực tế** — bạn tháo lắp khối, hoặc cube bỏ sót nước của chính
+  nó. Lúc này phải giải khối về trạng thái đã giải rồi bấm *Khối đang đã giải* để nói cho
+  cube biết. Nút này có hỏi lại trước khi làm, vì bấm nhầm lúc khối chưa giải sẽ làm mọi
+  thứ sau đó sai hết.
+
+## Hiển thị khối
+
+Mặc định là **khối 3D** kéo chuột xoay được (hoặc dùng phím mũi tên), dựng bằng CSS
+transform chứ không cần thư viện đồ hoạ nào — vị trí 54 ô màu lấy thẳng từ cùng mô hình
+toạ độ mà engine giải dùng. Trang xem lại có nút đổi nhanh sang bản trải phẳng khi cần
+thấy đủ cả 6 mặt một lúc; đổi mặc định trong Cài đặt.
+
+Có thêm tuỳ chọn cho khối trên màn hình **xoay theo con quay của cube thật**. Phần này
+đang tắt sẵn và ghi rõ là thử nghiệm: tôi chưa có cube thật để kiểm chứng phép đổi hệ
+trục, nên nếu bật lên mà thấy xoay sai trục thì tắt đi.
 
 ## Vì sao phải làm cẩn thận phần đọc nước
 
@@ -78,7 +106,7 @@ chuyển để đoán, nhưng lúc giải nhanh tay rung nhiều nên không đ�
 ## Kiểm thử
 
 ```bash
-npm test            # 109 khẳng định, chạy trong vài giây
+npm test            # 134 khẳng định, chạy trong vài giây
 npm run check:lse   # duyệt toàn bộ 184.320 trạng thái của nhóm LSE ⟨M, U⟩
 ```
 
@@ -97,6 +125,10 @@ bước chỉ dùng nhóm nước bảo toàn các bước trước. Ba phép ki
 
 Ngoài ra bộ sinh dữ liệu thử đã chạy 60 solve Roux ngẫu nhiên hợp lệ: không biên bước nào
 bị bỏ sót.
+
+Bộ dẫn vặn scramble có test riêng cho các tình huống thật: vặn đúng, vặn nhầm mặt đối
+diện, vặn sai chiều, lạc nhiều nước rồi sửa theo gợi ý, vặn lùi, và mất kết nối giữa
+chừng (khi đó app không bịa ra gợi ý sửa).
 
 ## Một cái bẫy của bản production
 

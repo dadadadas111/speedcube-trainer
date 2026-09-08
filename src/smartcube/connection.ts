@@ -7,9 +7,16 @@
  */
 
 import { connectGanCube, cubeTimestampLinearFit, type GanCubeConnection, type GanCubeEvent, type GanCubeMove } from 'gan-web-bluetooth';
-import { SOLVED_STATE, applyMove, fromKociemba, cloneState, type CubeState } from '../cube/cube';
+import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, cloneState, type CubeState } from '../cube/cube';
 
 export type CubeLinkStatus = 'disconnected' | 'connecting' | 'connected';
+
+export interface CubeQuaternion {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}
 
 export interface LiveMove {
   move: string;
@@ -25,6 +32,7 @@ type Listener = {
   state?: (s: CubeState, fromCube: boolean) => void;
   status?: (s: CubeLinkStatus, info: CubeInfo | null) => void;
   battery?: (level: number) => void;
+  gyro?: (q: CubeQuaternion) => void;
 };
 
 export interface CubeInfo {
@@ -46,6 +54,10 @@ export class CubeLink {
 
   status: CubeLinkStatus = 'disconnected';
   info: CubeInfo | null = null;
+  /** Hướng cube báo về lần gần nhất, null nếu cube không có con quay */
+  lastQuaternion: CubeQuaternion | null = null;
+  /** Số lần cube gửi về trạng thái khác với trạng thái app đang giữ */
+  driftCount = 0;
   /** Đặt true khi người dùng cho phép hỏi tay địa chỉ MAC */
   askForMac: ((deviceName: string) => Promise<string | null>) | null = null;
 
@@ -110,6 +122,10 @@ export class CubeLink {
     await this.conn?.sendCubeCommand({ type: 'REQUEST_FACELETS' });
   }
 
+  get connected(): boolean {
+    return this.status === 'connected';
+  }
+
   /** Báo cho cube biết trạng thái hiện tại của nó là "đã giải". */
   async resetToSolved(): Promise<void> {
     await this.conn?.sendCubeCommand({ type: 'REQUEST_RESET' });
@@ -137,10 +153,18 @@ export class CubeLink {
       }
       case 'FACELETS':
         try {
-          this.setState(fromKociemba(e.facelets), true);
+          const truth = fromKociemba(e.facelets);
+          // Cube là nguồn sự thật. Nếu lệch thì đã có nước bị rớt qua bluetooth —
+          // đếm lại để giao diện còn cảnh báo người dùng.
+          if (toKociemba(this.state) !== e.facelets) this.driftCount++;
+          this.setState(truth, true);
         } catch {
           /* chuỗi lạ thì bỏ qua */
         }
+        break;
+      case 'GYRO':
+        this.lastQuaternion = e.quaternion;
+        for (const l of this.listeners) l.gyro?.(e.quaternion);
         break;
       case 'BATTERY':
         if (this.info) this.info.battery = e.batteryLevel;

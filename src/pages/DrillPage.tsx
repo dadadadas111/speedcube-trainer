@@ -8,7 +8,7 @@ import { SOLVED_STATE, applyMoves, canonicalKey, cloneState, type CubeState } fr
 import { DrillMatcher, caseStateFor, summarizeDrill, type DrillRepData, type MoveStat } from '../analysis/drill';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import { virtualCube } from '../smartcube/virtual';
-import CubeNet from '../components/CubeNet';
+import CubeView from '../components/CubeView';
 import { formatSeconds } from '../analysis/stats';
 
 type Phase = 'setup' | 'armed' | 'running' | 'done';
@@ -323,7 +323,7 @@ function AlgDetail({
         <div className="mt-5 grid gap-5 md:grid-cols-[190px_minmax(0,1fr)]">
           <div>
             <p className="mb-2 text-[13px] text-ink-400">Trạng thái case</p>
-            <CubeNet state={caseState} size={170} />
+            <CubeView state={caseState} size={170} />
           </div>
           <div>
             {!usingCube ? (
@@ -346,7 +346,7 @@ function AlgDetail({
             {usingCube && (
               <div className="mt-4">
                 <p className="mb-1.5 text-[13px] text-ink-400">Khối của bạn</p>
-                <CubeNet state={cubeState} size={110} />
+                <CubeView state={cubeState} size={130} />
               </div>
             )}
           </div>

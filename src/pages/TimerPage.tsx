@@ -2,18 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/app';
 import { db, type Solve, type Penalty } from '../store/db';
 import { generateScramble, type ScrambleSource } from '../cube/scramble';
-import { SOLVED_STATE, applyMoves, canonicalKey, isSolved, cloneState, type CubeState } from '../cube/cube';
+import { SOLVED_STATE, applyMoves, isSolved, cloneState, type CubeState } from '../cube/cube';
 import { normalizeTimestamps, type LiveMove } from '../smartcube/connection';
 import { useCubeInput } from '../smartcube/useCubeInput';
+import { useCubeGyro } from '../smartcube/useCubeGyro';
 import { virtualCube } from '../smartcube/virtual';
+import { ScrambleTracker, isAtStart, type ScrambleProgress } from '../analysis/scrambleGuide';
 import { analyzeSolveRecord } from '../analysis/pipeline';
 import { averageOf, effectiveTime, formatTime } from '../analysis/stats';
-import CubeNet from '../components/CubeNet';
-import ScrambleDisplay from '../components/ScrambleDisplay';
+import CubeView from '../components/CubeView';
+import ScrambleGuide, { ScrambleHint } from '../components/ScrambleGuide';
+import CubeSync from '../components/CubeSync';
 import PostSolve from '../components/PostSolve';
 import StepRibbon from '../components/StepRibbon';
 
-type Phase = 'waiting' | 'ready' | 'inspecting' | 'holding' | 'armed' | 'running' | 'done';
+type Phase = 'scrambling' | 'ready' | 'inspecting' | 'holding' | 'armed' | 'running' | 'done';
 
 const HOLD_MS = 350;
 
@@ -23,19 +26,23 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
   const [scramble, setScramble] = useState<string[]>([]);
   const [scrambleSource, setScrambleSource] = useState<ScrambleSource>('random-state');
-  const [phase, setPhase] = useState<Phase>('waiting');
+  const [phase, setPhase] = useState<Phase>('scrambling');
   const [display, setDisplay] = useState(0);
   const [inspectLeft, setInspectLeft] = useState(0);
   const [cubeState, setCubeState] = useState<CubeState>(cloneState(SOLVED_STATE));
+  const [progress, setProgress] = useState<ScrambleProgress | null>(null);
   const [lastSolve, setLastSolve] = useState<Solve | null>(null);
   const [recent, setRecent] = useState<Solve[]>([]);
 
-  const phaseRef = useRef<Phase>('waiting');
+  const phaseRef = useRef<Phase>('scrambling');
   const movesRef = useRef<LiveMove[]>([]);
   const startRef = useRef(0);
   const scrambleRef = useRef<string[]>([]);
+  const trackerRef = useRef<ScrambleTracker | null>(null);
   const rafRef = useRef(0);
   const holdRef = useRef<number | null>(null);
+
+  const quaternion = useCubeGyro(settings.useGyro && cubeStatus === 'connected');
 
   const setPhaseBoth = useCallback((p: Phase) => {
     phaseRef.current = p;
@@ -43,20 +50,22 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   }, []);
 
   const targetState = useMemo(() => applyMoves(SOLVED_STATE, scramble), [scramble]);
-  const targetKey = useMemo(() => canonicalKey(targetState), [targetState]);
-  const scrambleMatched = useMemo(
-    () => usingCube && canonicalKey(cubeState) === targetKey,
-    [usingCube, cubeState, targetKey],
-  );
 
+  /* ---------- scramble mới ---------- */
   const newScramble = useCallback(async () => {
-    const { moves: s, source } = await generateScramble(settings.randomStateScramble);
-    scrambleRef.current = s;
-    setScramble(s);
+    const { moves, source } = await generateScramble(settings.randomStateScramble);
+    scrambleRef.current = moves;
+    setScramble(moves);
     setScrambleSource(source);
-    setPhaseBoth('waiting');
     setDisplay(0);
-  }, [settings.randomStateScramble, setPhaseBoth]);
+    const tracker = new ScrambleTracker(moves);
+    trackerRef.current = tracker;
+    setProgress(usingCube ? tracker.update(cubeStateRef.current) : null);
+    setPhaseBoth(usingCube && settings.requireScrambleMatch ? 'scrambling' : 'ready');
+  }, [settings.randomStateScramble, settings.requireScrambleMatch, usingCube, setPhaseBoth]);
+
+  // giữ trạng thái khối mới nhất cho các callback không phụ thuộc render
+  const cubeStateRef = useRef<CubeState>(cloneState(SOLVED_STATE));
 
   useEffect(() => {
     void newScramble();
@@ -72,7 +81,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     void loadRecent();
   }, [loadRecent, revision]);
 
-  /* ---------- vòng lặp hiển thị ---------- */
+  /* ---------- đồng hồ ---------- */
   const tick = useCallback(() => {
     setDisplay(performance.now() - startRef.current);
     rafRef.current = requestAnimationFrame(tick);
@@ -83,7 +92,6 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     rafRef.current = 0;
   };
 
-  /* ---------- kết thúc và lưu solve ---------- */
   const finishSolve = useCallback(
     async (timeMs: number, moves: LiveMove[], source: 'smartcube' | 'manual') => {
       stopRaf();
@@ -109,11 +117,31 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   /* ---------- nhập từ khối ---------- */
   useCubeInput(
     {
-      onState: (s) => setCubeState(s),
+      onState: (s) => {
+        cubeStateRef.current = s;
+        setCubeState(s);
+        // Trạng thái có thể đổi mà không qua nước nào (cube gửi lại facelets sau
+        // khi đồng bộ) — cập nhật lại tiến độ cho khớp.
+        if (phaseRef.current === 'scrambling' && trackerRef.current) {
+          setProgress(trackerRef.current.update(s));
+        }
+      },
       onMove: (m, state) => {
         const p = phaseRef.current;
-        if (p === 'ready' || p === 'inspecting' || p === 'waiting') {
-          if (p === 'waiting' && settings.requireScrambleMatch) return;
+
+        if (p === 'scrambling') {
+          const tracker = trackerRef.current;
+          if (!tracker) return;
+          const next = tracker.update(state, m.move);
+          setProgress(next);
+          if (next.status === 'complete') {
+            setPhaseBoth(settings.useInspection ? 'inspecting' : 'ready');
+            if (settings.useInspection) setInspectLeft(settings.inspectionSeconds * 1000);
+          }
+          return;
+        }
+
+        if (p === 'ready' || p === 'inspecting') {
           movesRef.current = [m];
           startRef.current = performance.now();
           setPhaseBoth('running');
@@ -121,6 +149,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           rafRef.current = requestAnimationFrame(tick);
           return;
         }
+
         if (p === 'running') {
           movesRef.current.push(m);
           if (isSolved(state)) {
@@ -134,14 +163,25 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     settings.keyboardCube,
   );
 
-  // Khối vừa được vặn khớp scramble -> sẵn sàng
+  /**
+   * Cắm hoặc rút cube giữa chừng thì đổi cách bấm giờ cho khớp: có cube thì
+   * chuyển sang chế độ dẫn scramble, không có thì quay về bấm phím cách.
+   */
   useEffect(() => {
-    if (!usingCube) return;
-    if (scrambleMatched && (phase === 'waiting' || phase === 'done')) {
-      setPhaseBoth(settings.useInspection ? 'inspecting' : 'ready');
-      if (settings.useInspection) setInspectLeft(settings.inspectionSeconds * 1000);
+    const p = phaseRef.current;
+    if (p === 'running' || p === 'holding' || p === 'armed') return;
+    if (usingCube && settings.requireScrambleMatch) {
+      const tracker = new ScrambleTracker(scrambleRef.current);
+      trackerRef.current = tracker;
+      const next = tracker.update(cubeStateRef.current);
+      setProgress(next);
+      setPhaseBoth(next.status === 'complete' ? 'ready' : 'scrambling');
+    } else {
+      trackerRef.current = null;
+      setProgress(null);
+      setPhaseBoth('ready');
     }
-  }, [scrambleMatched, phase, usingCube, settings.useInspection, settings.inspectionSeconds, setPhaseBoth]);
+  }, [usingCube, settings.requireScrambleMatch, setPhaseBoth]);
 
   // Đếm ngược inspection
   useEffect(() => {
@@ -169,8 +209,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
       }
       if (e.code !== 'Space' || e.repeat) return;
       e.preventDefault();
-      if (usingCube) return; // khối thật tự bắt đầu theo nước đầu tiên
-      if (p === 'waiting' || p === 'done' || p === 'ready' || p === 'inspecting') {
+      if (usingCube) return; // có khối thật thì nước đầu tiên tự khởi động
+      if (p !== 'running') {
         setPhaseBoth('holding');
         holdRef.current = window.setTimeout(() => setPhaseBoth('armed'), HOLD_MS);
       }
@@ -188,7 +228,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         setPhaseBoth('running');
         rafRef.current = requestAnimationFrame(tick);
       } else if (p === 'holding') {
-        setPhaseBoth('waiting');
+        setPhaseBoth('ready');
       }
     };
     window.addEventListener('keydown', down);
@@ -204,10 +244,22 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   /* ---------- dẫn xuất ---------- */
   const analysis = useMemo(() => (lastSolve ? analyzeSolveRecord(lastSolve, settings) : null), [lastSolve, settings]);
   const times = useMemo(() => recent.map(effectiveTime), [recent]);
+  const finiteTimes = times.filter(isFinite);
   const ao5 = averageOf(times.slice(0, 5));
   const ao12 = averageOf(times.slice(0, 12));
-  const finiteTimes = times.filter(isFinite);
   const best = finiteTimes.length ? Math.min(...finiteTimes) : NaN;
+
+  /**
+   * Chỉ báo "khối chưa giải" khi app thật sự bó tay: đang lạc đường mà lại không
+   * biết người dùng đã vặn gì nên không dựng được gợi ý sửa. Nếu biết thì cứ đưa
+   * gợi ý vặn ngược, kể cả khi mới sai đúng một nước đầu tiên.
+   */
+  const notReady =
+    usingCube &&
+    phase === 'scrambling' &&
+    progress?.status === 'off-track' &&
+    progress.fix.length === 0 &&
+    !isAtStart(cubeState);
 
   const applyPenalty = async (solve: Solve, penalty: Penalty) => {
     if (!solve.id) return;
@@ -237,56 +289,76 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-8.5rem)] gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="flex min-h-0 flex-col gap-5">
-        {/* Scramble là thứ đập vào mắt trước tiên */}
         <section className="panel p-5">
-          <div className="mb-3 flex items-start justify-between gap-4">
-            <ScrambleDisplay moves={scramble} />
+          <div className="mb-1 flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <ScrambleGuide moves={scramble} progress={phase === 'scrambling' ? progress : null} />
+            </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
               <button className="btn btn-ghost" onClick={() => void newScramble()} title="Đổi scramble khác">
                 Đổi
               </button>
               {settings.randomStateScramble && scrambleSource === 'random-move' && (
-                <span
-                  className="text-[11px] text-warn"
-                  title="Không nạp được bộ sinh random-state; đang tạm dùng scramble ngẫu nhiên theo nước."
-                >
+                <span className="text-[11px] text-warn" title="Không nạp được bộ sinh random-state; đang tạm dùng scramble ngẫu nhiên theo nước.">
                   random-move
                 </span>
               )}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4 border-t border-ink-700 pt-4">
-            <CubeNet state={targetState} size={120} />
-            <div className="min-w-[9rem] flex-1">
-              <StatusLine
-                phase={phase}
-                usingCube={usingCube}
-                matched={scrambleMatched}
-                inspectLeft={inspectLeft}
-                requireMatch={settings.requireScrambleMatch}
+
+          <div className="mt-4 flex flex-wrap items-start gap-5 border-t border-ink-700 pt-4">
+            <div>
+              <p className="mb-1.5 text-[13px] text-ink-400">
+                {usingCube && phase === 'scrambling' ? 'Khối của bạn' : 'Sau khi scramble'}
+              </p>
+              <CubeView
+                state={usingCube && phase === 'scrambling' ? cubeState : targetState}
+                size={190}
+                quaternion={usingCube && phase === 'scrambling' ? quaternion : null}
               />
-              {settings.keyboardCube && (
+            </div>
+            <div className="min-w-[14rem] flex-1">
+              {phase === 'inspecting' ? (
+                <div>
+                  <p className="tnum font-mono text-4xl font-semibold text-warn">{(inspectLeft / 1000).toFixed(1)}</p>
+                  <p className="text-[13px] text-ink-400">Nước đầu tiên bắt đầu tính giờ.</p>
+                </div>
+              ) : phase === 'ready' && usingCube ? (
+                <p className="armed text-lg font-semibold text-good">
+                  {settings.requireScrambleMatch ? 'Scramble xong' : 'Sẵn sàng'} — vặn nước đầu là chạy
+                </p>
+              ) : phase === 'armed' ? (
+                <p className="text-lg font-semibold text-good">Thả tay là chạy</p>
+              ) : phase === 'holding' ? (
+                <p className="text-lg font-semibold text-warn">Giữ thêm chút nữa…</p>
+              ) : !usingCube ? (
+                <p className="text-sm text-ink-300">
+                  Giữ phím cách để bấm giờ tay, hoặc kết nối smart cube ở góc trên để được dẫn vặn scramble.
+                </p>
+              ) : (
+                <ScrambleHint progress={progress} notReady={!!notReady} />
+              )}
+
+              {usingCube && phase === 'scrambling' && (progress?.status === 'off-track' || notReady) && (
+                <div className="mt-4">
+                  <CubeSync compact />
+                </div>
+              )}
+              {settings.keyboardCube && phase === 'scrambling' && (
                 <button
-                  className="btn btn-ghost mt-2 !px-2 !py-1 !text-[13px]"
+                  className="btn btn-ghost mt-3 !px-2 !py-1 !text-[13px]"
                   onClick={() => virtualCube.setState(applyMoves(SOLVED_STATE, scramble))}
                 >
-                  Đặt khối ảo theo scramble
+                  Vặn hộ khối ảo theo scramble
                 </button>
               )}
             </div>
-            {usingCube && (
-              <div className="text-right">
-                <p className="mb-1 text-[13px] text-ink-400">Khối của bạn</p>
-                <CubeNet state={cubeState} size={104} />
-              </div>
-            )}
           </div>
         </section>
 
-        {/* Đồng hồ + kết quả lần vừa rồi */}
-        <section className="panel flex flex-1 flex-col justify-center p-5">
+        <section className="panel p-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <div className="tnum font-mono text-[clamp(2.75rem,8vw,5rem)] font-semibold leading-none">
@@ -327,7 +399,6 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         </section>
       </div>
 
-      {/* Danh sách solve của phiên */}
       <section className="panel flex max-h-[calc(100vh-8.5rem)] flex-col overflow-hidden">
         <header className="flex items-baseline justify-between border-b border-ink-700 px-4 py-3">
           <h2 className="text-sm font-semibold">Solve trong phiên</h2>
@@ -340,12 +411,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
             </p>
           )}
           {recent.map((s, i) => (
-            <SolveRow
-              key={s.id}
-              solve={s}
-              index={recent.length - i}
-              onOpen={() => s.id && onOpenSolve(s.id)}
-            />
+            <SolveRow key={s.id} solve={s} index={recent.length - i} onOpen={() => s.id && onOpenSolve(s.id)} />
           ))}
         </div>
       </section>
@@ -359,43 +425,6 @@ function Stat({ label, value }: { label: string; value: string }) {
       <dt className="text-[13px] text-ink-400">{label}</dt>
       <dd className="tnum font-mono text-lg text-ink-100">{value}</dd>
     </div>
-  );
-}
-
-function StatusLine({
-  phase,
-  usingCube,
-  matched,
-  inspectLeft,
-  requireMatch,
-}: {
-  phase: Phase;
-  usingCube: boolean;
-  matched: boolean;
-  inspectLeft: number;
-  requireMatch: boolean;
-}) {
-  if (!usingCube) {
-    if (phase === 'armed') return <p className="text-lg font-semibold text-good">Thả tay là chạy</p>;
-    if (phase === 'holding') return <p className="text-lg font-semibold text-warn">Giữ thêm chút nữa…</p>;
-    return <p className="text-sm text-ink-300">Giữ phím cách để bấm giờ tay, hoặc kết nối smart cube ở góc trên.</p>;
-  }
-  if (phase === 'inspecting')
-    return (
-      <div>
-        <p className="tnum font-mono text-3xl font-semibold text-warn">{(inspectLeft / 1000).toFixed(1)}</p>
-        <p className="text-[13px] text-ink-400">Nước đầu tiên sẽ bắt đầu tính giờ.</p>
-      </div>
-    );
-  if (phase === 'ready')
-    return <p className="armed text-lg font-semibold text-good">Sẵn sàng — vặn nước đầu là chạy</p>;
-  if (matched) return <p className="text-lg font-semibold text-good">Khối đã khớp scramble</p>;
-  return (
-    <p className="text-sm text-ink-300">
-      {requireMatch
-        ? 'Vặn khối theo scramble ở trên. Khớp rồi đồng hồ mới sẵn sàng.'
-        : 'Vặn nước đầu tiên để bắt đầu.'}
-    </p>
   );
 }
 

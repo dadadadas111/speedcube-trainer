@@ -5,7 +5,7 @@ import { parseAlg } from '../cube/alg';
 import { analyzeSolveRecord } from '../analysis/pipeline';
 import { stepFacelets } from '../analysis/method';
 import { effectiveTime, formatSeconds, formatTime } from '../analysis/stats';
-import CubeNet from '../components/CubeNet';
+import CubeView from '../components/CubeView';
 import StepRibbon from '../components/StepRibbon';
 import ScrambleDisplay from '../components/ScrambleDisplay';
 import { stepColor } from '../components/palette';
@@ -20,6 +20,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [pauseAtSteps, setPauseAtSteps] = useState(true);
+  const [viewMode, setViewMode] = useState<'3d' | 'net' | null>(null);
   const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -118,7 +119,31 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         {/* Khối + điều khiển phát lại */}
         <section className="panel p-4">
-          <CubeNet state={state} viewRotation={viewRotation} highlight={highlight} size={260} className="mx-auto" />
+          <div className="flex justify-center">
+            <CubeView
+              state={state}
+              viewRotation={viewRotation}
+              highlight={highlight}
+              size={240}
+              force={viewMode ?? undefined}
+              interactive
+            />
+          </div>
+          <div className="mt-2 flex justify-center gap-1">
+            <button
+              className={`btn !px-2 !py-0.5 !text-[12px] ${viewMode === '3d' ? '!border-cube-blue !text-cube-blue' : ''}`}
+              onClick={() => setViewMode('3d')}
+            >
+              3D
+            </button>
+            <button
+              className={`btn !px-2 !py-0.5 !text-[12px] ${viewMode === 'net' ? '!border-cube-blue !text-cube-blue' : ''}`}
+              onClick={() => setViewMode('net')}
+              title="Trải phẳng — thấy đủ cả 6 mặt cùng lúc"
+            >
+              Trải phẳng
+            </button>
+          </div>
           <div className="mt-4 text-center">
             <p className="text-[13px] text-ink-400">
               {currentStep ? currentStep.label : 'Trước khi giải'} · nước {index}/{total}
