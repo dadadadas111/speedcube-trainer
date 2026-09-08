@@ -126,3 +126,54 @@ Các tỷ trọng bước dùng để so sánh nằm ở `REFERENCE` trong
 
 Nằm trong IndexedDB của trình duyệt. Xoá dữ liệu trình duyệt là mất, nên vào
 Cài đặt → Xuất file sao lưu định kỳ.
+
+## Triển khai
+
+Bản chạy thật: **https://cube.dash.id.vn**
+
+Mỗi lần push lên `main`, GitHub Actions
+([.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)) sẽ:
+
+1. `npm ci` → `npm run typecheck` → `npm test` (109 khẳng định) → `npm run build`
+2. Nếu tất cả xanh mới rsync thư mục `dist/` lên server
+3. Gọi thử lại site, không trả về 200 thì báo hỏng
+
+Pull request chỉ chạy bước 1 — không deploy.
+
+### Hạ tầng
+
+| Thành phần | Cấu hình |
+|---|---|
+| Server | Ubuntu 22.04, nginx (chung máy với `casino.dash.id.vn`, hai site tách biệt) |
+| Webroot | `/var/www/cube.dash.id.vn` |
+| TLS | Let's Encrypt, certbot tự gia hạn qua `certbot.timer` |
+| DNS | Cloudflare (proxy bật) → origin `160.187.247.2` |
+
+### Về bảo mật khoá deploy
+
+CI **không** dùng `root`. Có một user riêng `cubedeploy`, và khoá SSH của nó bị ép
+chỉ chạy được đúng một lệnh:
+
+```
+command="/usr/bin/rrsync /var/www/cube.dash.id.vn",no-pty,no-port-forwarding,...
+```
+
+Nghĩa là nếu secret trên GitHub bị lộ, kẻ lấy được cũng chỉ ghi được file vào đúng
+thư mục web đó, không mở được shell, không đụng được sang site khác. Đã kiểm chứng:
+thử chạy `id; cat /etc/shadow` bằng khoá này thì bị chặn.
+
+Host key của server được ghim sẵn trong secret `DEPLOY_KNOWN_HOSTS` thay vì dùng
+`ssh-keyscan` lúc chạy, để không bị tráo server giữa đường.
+
+### Thư mục xác thực TLS
+
+`/.well-known/acme-challenge/` được nginx trỏ sang `/var/www/acme`, **nằm ngoài**
+webroot. Lý do: deploy dùng `rsync --delete` nên mọi thứ trong webroot bị dọn sạch
+mỗi lần; để thư mục ACME ở trong đó thì lần gia hạn cert sau sẽ hỏng.
+
+### Deploy tay khi cần
+
+```bash
+npm run build
+rsync -az --delete dist/ root@160.187.247.2:/var/www/cube.dash.id.vn/
+```
