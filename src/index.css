@@ -1,0 +1,161 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Hệ màu lấy thẳng từ sticker của cube: mỗi bước giải mang một màu mặt cube và
+   giữ nguyên màu đó ở mọi nơi (dải thời gian, biểu đồ, nhãn bước, replay).
+   Phần khung nền để trung tính hoàn toàn để màu cube tự nói.
+--------------------------------------------------------------------------- */
+@theme {
+  --font-sans: 'Be Vietnam Pro', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --color-ink-900: #10141a;
+  --color-ink-850: #151a22;
+  --color-ink-800: #1a212b;
+  --color-ink-700: #222b37;
+  --color-ink-600: #2e3a49;
+  --color-ink-500: #3d4b5c;
+  --color-ink-400: #5d6d80;
+  --color-ink-300: #8697a9;
+  --color-ink-200: #b8c4d0;
+  --color-ink-100: #e7edf3;
+
+  --color-cube-white: #eef1f5;
+  --color-cube-yellow: #ffcf2e;
+  --color-cube-green: #17b26a;
+  --color-cube-blue: #2f7ff2;
+  --color-cube-red: #e0384f;
+  --color-cube-orange: #ff7a1a;
+
+  --color-good: #17b26a;
+  --color-warn: #ffcf2e;
+  --color-bad: #e0384f;
+}
+
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: local('Be Vietnam Pro');
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-900);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-ink-600); border-radius: 99px; border: 2px solid var(--color-ink-900); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink-500); }
+
+:focus-visible {
+  outline: 2px solid var(--color-cube-blue);
+  outline-offset: 2px;
+}
+
+/* Số liệu không được nhảy chữ số khi đang chạy */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Bề mặt: viền mảnh, bo nhẹ, không đổ bóng — để phẳng như mặt bàn làm việc */
+.panel {
+  background: var(--color-ink-850);
+  border: 1px solid var(--color-ink-700);
+  border-radius: 10px;
+}
+
+.panel-flush {
+  background: var(--color-ink-850);
+  border: 1px solid var(--color-ink-700);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-ink-600);
+  background: var(--color-ink-800);
+  color: var(--color-ink-100);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.btn:hover:not(:disabled) { background: var(--color-ink-700); border-color: var(--color-ink-500); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary {
+  background: var(--color-cube-blue);
+  border-color: transparent;
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { background: #4a90ff; border-color: transparent; }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--color-ink-300); }
+.btn-ghost:hover:not(:disabled) { background: var(--color-ink-800); color: var(--color-ink-100); }
+.btn-danger { border-color: color-mix(in srgb, var(--color-bad) 45%, transparent); color: var(--color-bad); background: transparent; }
+.btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--color-bad) 14%, transparent); }
+
+.input {
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-600);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  color: var(--color-ink-100);
+  font-size: 0.9rem;
+  width: 100%;
+}
+.input:focus { border-color: var(--color-cube-blue); outline: none; }
+
+.field-label {
+  font-size: 0.8125rem;
+  color: var(--color-ink-300);
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+/* Chỉ dùng cho thời điểm trạng thái thay đổi, không dùng làm trang trí */
+@keyframes armed-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.armed { animation: armed-pulse 900ms ease-in-out infinite; }
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.pop-in { animation: pop-in 180ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .armed, .pop-in { animation: none; }
+  * { transition-duration: 1ms !important; }
+}
+
+table.data { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+table.data th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--color-ink-300);
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--color-ink-700);
+  white-space: nowrap;
+}
+table.data td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--color-ink-800); }
+table.data tbody tr:hover { background: var(--color-ink-800); }

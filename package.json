@@ -1,0 +1,38 @@
+{
+  "name": "speedcube-trainer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/cube/__selftest.ts && tsx src/analysis/__selftest.ts && tsx src/analysis/__drilltest.ts && tsx src/analysis/__stats_check.ts",
+    "test:cube": "tsx src/cube/__selftest.ts",
+    "test:roux": "tsx src/analysis/__selftest.ts",
+    "test:drill": "tsx src/analysis/__drilltest.ts",
+    "check:lse": "tsx src/analysis/__lsegroup.ts"
+  },
+  "dependencies": {
+    "cubing": "^0.63.4",
+    "dexie": "^4.4.5",
+    "dexie-react-hooks": "^4.4.0",
+    "gan-web-bluetooth": "^3.0.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.15.4",
+    "rxjs": "^7.8.2",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2"
+  }
+}
