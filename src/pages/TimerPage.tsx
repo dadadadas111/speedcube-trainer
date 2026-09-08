@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/app';
 import { db, type Solve, type Penalty } from '../store/db';
-import { generateScramble } from '../cube/scramble';
+import { generateScramble, type ScrambleSource } from '../cube/scramble';
 import { SOLVED_STATE, applyMoves, canonicalKey, isSolved, cloneState, type CubeState } from '../cube/cube';
 import { normalizeTimestamps, type LiveMove } from '../smartcube/connection';
 import { useCubeInput } from '../smartcube/useCubeInput';
@@ -22,6 +22,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const usingCube = cubeStatus === 'connected' || settings.keyboardCube;
 
   const [scramble, setScramble] = useState<string[]>([]);
+  const [scrambleSource, setScrambleSource] = useState<ScrambleSource>('random-state');
   const [phase, setPhase] = useState<Phase>('waiting');
   const [display, setDisplay] = useState(0);
   const [inspectLeft, setInspectLeft] = useState(0);
@@ -49,9 +50,10 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   );
 
   const newScramble = useCallback(async () => {
-    const s = await generateScramble(settings.randomStateScramble);
+    const { moves: s, source } = await generateScramble(settings.randomStateScramble);
     scrambleRef.current = s;
     setScramble(s);
+    setScrambleSource(source);
     setPhaseBoth('waiting');
     setDisplay(0);
   }, [settings.randomStateScramble, setPhaseBoth]);
@@ -241,9 +243,19 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         <section className="panel p-5">
           <div className="mb-3 flex items-start justify-between gap-4">
             <ScrambleDisplay moves={scramble} />
-            <button className="btn btn-ghost shrink-0" onClick={() => void newScramble()} title="Đổi scramble khác">
-              Đổi
-            </button>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <button className="btn btn-ghost" onClick={() => void newScramble()} title="Đổi scramble khác">
+                Đổi
+              </button>
+              {settings.randomStateScramble && scrambleSource === 'random-move' && (
+                <span
+                  className="text-[11px] text-warn"
+                  title="Không nạp được bộ sinh random-state; đang tạm dùng scramble ngẫu nhiên theo nước."
+                >
+                  random-move
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 border-t border-ink-700 pt-4">
             <CubeNet state={targetState} size={120} />

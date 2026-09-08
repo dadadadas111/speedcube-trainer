@@ -25,31 +25,47 @@ export function randomMoveScramble(length = 22): string[] {
   return out;
 }
 
-let randomStateFn: ((event: string) => Promise<{ toString(): string }>) | null | undefined;
+type RandomScrambleFn = (event: string) => Promise<{ toString(): string }>;
+let randomStateFn: RandomScrambleFn | null | undefined;
 
-/**
- * Scramble random-state qua cubing.js. Nạp động để app vẫn chạy được nếu gói
- * đó lỗi hoặc trình duyệt chặn worker.
- */
+/** Nạp động; nếu hỏng thì trả null để bên gọi rơi về scramble random-move. */
 async function tryRandomState(): Promise<string[] | null> {
   try {
     if (randomStateFn === undefined) {
-      const mod = await import('cubing/scramble');
-      randomStateFn = mod.randomScrambleForEvent as never;
+      // cubing.js thử ba cách tạo worker theo thứ tự. Cách mặc định dựa vào
+      // `import.meta.resolve`, không hợp với bundler. Cách "esbuild" thì import
+      // chính module worker rồi lấy URL nó tự khai báo — đúng thứ bundler xử lý
+      // được, nên bản build mới tìm ra file worker đã bị đổi tên theo hash.
+      const [mod, search] = await Promise.all([import('cubing/scramble'), import('cubing/search')]);
+      search.setSearchDebug({ prioritizeEsbuildWorkaroundForWorkerInstantiation: true });
+      randomStateFn = mod.randomScrambleForEvent as unknown as RandomScrambleFn;
     }
     if (!randomStateFn) return null;
     const alg = await randomStateFn('333');
-    return parseAlg(alg.toString());
-  } catch {
+    const moves = parseAlg(alg.toString());
+    return moves.length ? moves : null;
+  } catch (err) {
+    console.warn('Không dùng được scramble random-state, tạm dùng random-move.', err);
     randomStateFn = null;
     return null;
   }
 }
 
-export async function generateScramble(preferRandomState = true): Promise<string[]> {
+export type ScrambleSource = 'random-state' | 'random-move';
+
+export interface Scramble {
+  moves: string[];
+  /**
+   * Nguồn thật sự đã dùng. Cần trả về để giao diện nói rõ khi phải dùng hàng
+   * thay thế — trước đây chỗ này rơi về random-move mà không ai biết.
+   */
+  source: ScrambleSource;
+}
+
+export async function generateScramble(preferRandomState = true): Promise<Scramble> {
   if (preferRandomState) {
     const rs = await tryRandomState();
-    if (rs && rs.length) return rs;
+    if (rs && rs.length) return { moves: rs, source: 'random-state' };
   }
-  return randomMoveScramble();
+  return { moves: randomMoveScramble(), source: 'random-move' };
 }

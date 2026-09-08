@@ -98,6 +98,24 @@ bước chỉ dùng nhóm nước bảo toàn các bước trước. Ba phép ki
 Ngoài ra bộ sinh dữ liệu thử đã chạy 60 solve Roux ngẫu nhiên hợp lệ: không biên bước nào
 bị bỏ sót.
 
+## Một cái bẫy của bản production
+
+Scramble random-state chuẩn WCA do cubing.js sinh ra trong một Web Worker. Worker đó
+nằm chung đồ thị module với app, nên chunk của nó import cả chunk entry và gọi helper
+`__vitePreload` ngay lúc nạp — mà helper này đụng `document` để chèn thẻ preload, còn
+trong worker thì không có `document`. Worker chết, và app **vẫn chạy bình thường**
+nhưng âm thầm rơi xuống scramble random-move. Dev server không dính, chỉ bản build mới lộ.
+
+Ba lớp xử lý, đều ghi rõ lý do tại chỗ:
+
+- `modulePreload: false` và `cssCodeSplit: false` trong
+  [vite.config.ts](vite.config.ts) — để `__vitePreload` nhận danh sách rỗng rồi
+  thoát sớm, không chạm `document`.
+- [src/main.tsx](src/main.tsx) bọc mọi tác dụng phụ DOM sau `typeof document`, vì
+  file entry này thật sự bị nạp trong ngữ cảnh worker.
+- Giao diện hiện nhãn `random-move` cạnh nút Đổi khi phải dùng hàng thay thế — để
+  lần sau nếu hỏng lại thì nhìn thấy ngay chứ không im lặng.
+
 ## Hai chỗ app cố tình chọn cách hiểu chặt
 
 **1. Khi nào tính là "EO xong".** Tiêu chí: cả 6 cạnh đúng chiều *và* lát M đang thẳng
