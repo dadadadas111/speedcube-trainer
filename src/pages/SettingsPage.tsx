@@ -2,13 +2,14 @@ import { useRef, useState } from 'react';
 import { useApp } from '../store/app';
 import { exportAll, importAll, db } from '../store/db';
 import { KEYMAP_HELP } from '../smartcube/virtual';
-import { cubeLink } from '../smartcube/connection';
+import { cubeLink, savedMacs, forgetMac } from '../smartcube/connection';
 import CubeSync from '../components/CubeSync';
 
 export default function SettingsPage() {
   const { settings, updateSettings, sessions, sessionId, addSession, renameSession, deleteSession, setSession, bump } = useApp();
   const [newSession, setNewSession] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const [macs, setMacs] = useState(() => savedMacs());
   const fileRef = useRef<HTMLInputElement>(null);
 
   const doExport = async () => {
@@ -259,6 +260,36 @@ export default function SettingsPage() {
             </span>
           )}
         </div>
+
+        <h3 className="mt-5 text-sm font-semibold">Địa chỉ MAC đã lưu</h3>
+        <p className="mt-1 max-w-[65ch] text-[13px] text-ink-400">
+          GAN mã hoá dữ liệu bằng khoá trộn từ địa chỉ MAC nên bắt buộc phải có. Chrome trên máy tính đọc được
+          tự động; trên điện thoại thì thường phải nhập tay một lần, trừ khi bạn bật
+          <span className="font-mono text-ink-300"> chrome://flags</span> →{' '}
+          <span className="text-ink-300">Experimental Web Platform features</span>. Nếu nhập nhầm thì cube vẫn
+          kết nối được nhưng dữ liệu ra rác — xoá ở đây rồi kết nối lại để nhập lại.
+        </p>
+        {macs.length === 0 ? (
+          <p className="mt-3 text-[13px] text-ink-500">Chưa lưu MAC nào.</p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-2">
+            {macs.map((m) => (
+              <li key={m.key} className="flex flex-wrap items-center gap-3">
+                <span className="text-[13px] text-ink-200">{m.label}</span>
+                <span className="font-mono text-[13px] text-ink-400">{m.mac}</span>
+                <button
+                  className="btn btn-danger !py-0.5 !text-[12px]"
+                  onClick={() => {
+                    forgetMac(m.key);
+                    setMacs(savedMacs());
+                  }}
+                >
+                  Xoá
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

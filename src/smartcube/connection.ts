@@ -7,7 +7,10 @@
  */
 
 import { connectGanCube, cubeTimestampLinearFit, type GanCubeConnection, type GanCubeEvent, type GanCubeMove } from 'gan-web-bluetooth';
-import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, cloneState, type CubeState } from '../cube/cube';
+import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isPlausibleState, cloneState, type CubeState } from '../cube/cube';
+import { MAC_STORAGE_KEY, normalizeMac } from './mac';
+
+export { normalizeMac, savedMacs, forgetMac } from './mac';
 
 export type CubeLinkStatus = 'disconnected' | 'connecting' | 'connected';
 
@@ -29,6 +32,8 @@ export interface LiveMove {
 
 type Listener = {
   move?: (m: LiveMove, state: CubeState) => void;
+  /** Dữ liệu đọc về là rác — gần như chắc chắn do địa chỉ MAC sai */
+  garbled?: () => void;
   state?: (s: CubeState, fromCube: boolean) => void;
   status?: (s: CubeLinkStatus, info: CubeInfo | null) => void;
   battery?: (level: number) => void;
@@ -44,8 +49,6 @@ export interface CubeInfo {
   battery?: number;
 }
 
-const MAC_STORAGE_KEY = 'sct.cubeMac';
-
 export class CubeLink {
   private conn: GanCubeConnection | null = null;
   private sub: { unsubscribe(): void } | null = null;
@@ -58,6 +61,8 @@ export class CubeLink {
   lastQuaternion: CubeQuaternion | null = null;
   /** Số lần cube gửi về trạng thái khác với trạng thái app đang giữ */
   driftCount = 0;
+  /** Số gói trạng thái giải mã ra rác; >0 nghĩa là MAC nhiều khả năng sai */
+  garbledCount = 0;
   /** Đặt true khi người dùng cho phép hỏi tay địa chỉ MAC */
   askForMac: ((deviceName: string) => Promise<string | null>) | null = null;
 
@@ -85,11 +90,12 @@ export class CubeLink {
     this.emitStatus();
     try {
       const conn = await connectGanCube(async (device, isFallback) => {
-        const saved = localStorage.getItem(`${MAC_STORAGE_KEY}.${device.id ?? device.name ?? 'x'}`);
+        const saved = localStorage.getItem(`${MAC_STORAGE_KEY}.${device.name ?? device.id ?? 'cube'}`);
         if (saved) return saved;
         if (!isFallback) return null; // để thư viện tự dò trước
-        const mac = this.askForMac ? await this.askForMac(device.name ?? 'cube') : null;
-        if (mac) localStorage.setItem(`${MAC_STORAGE_KEY}.${device.id ?? device.name ?? 'x'}`, mac);
+        const entered = this.askForMac ? await this.askForMac(device.name ?? 'cube') : null;
+        const mac = entered ? normalizeMac(entered) : null;
+        if (mac) localStorage.setItem(`${MAC_STORAGE_KEY}.${device.name ?? device.id ?? 'cube'}`, mac);
         return mac;
       });
       this.conn = conn;
@@ -151,17 +157,25 @@ export class CubeLink {
         for (const l of this.listeners) l.state?.(this.state, false);
         break;
       }
-      case 'FACELETS':
+      case 'FACELETS': {
+        let truth: CubeState | null = null;
         try {
-          const truth = fromKociemba(e.facelets);
-          // Cube là nguồn sự thật. Nếu lệch thì đã có nước bị rớt qua bluetooth —
-          // đếm lại để giao diện còn cảnh báo người dùng.
-          if (toKociemba(this.state) !== e.facelets) this.driftCount++;
-          this.setState(truth, true);
+          truth = fromKociemba(e.facelets);
         } catch {
-          /* chuỗi lạ thì bỏ qua */
+          truth = null;
         }
+        if (!truth || !isPlausibleState(truth)) {
+          // Giải mã ra rác: khoá mã hoá sai, tức là MAC nhập sai.
+          this.garbledCount++;
+          for (const l of this.listeners) l.garbled?.();
+          break;
+        }
+        // Cube là nguồn sự thật. Nếu lệch thì đã có nước bị rớt qua bluetooth —
+        // đếm lại để giao diện còn cảnh báo người dùng.
+        if (toKociemba(this.state) !== e.facelets) this.driftCount++;
+        this.setState(truth, true);
         break;
+      }
       case 'GYRO':
         this.lastQuaternion = e.quaternion;
         for (const l of this.listeners) l.gyro?.(e.quaternion);

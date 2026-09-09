@@ -81,6 +81,22 @@ export function toKociemba(s: CubeState): string {
   return out;
 }
 
+/**
+ * Trạng thái có hợp lệ về mặt số lượng màu không: mỗi màu đúng 9 ô.
+ *
+ * Dùng để bắt trường hợp nhập sai địa chỉ MAC của smart cube: khi đó dữ liệu
+ * giải mã ra rác, cube trông như đã kết nối nhưng mọi thứ đọc về đều vô nghĩa.
+ * Kiểm tra này không xác nhận khối có giải được hay không, chỉ chặn rác.
+ */
+export function isPlausibleState(s: CubeState): boolean {
+  const count = new Array(6).fill(0);
+  for (let i = 0; i < 54; i++) {
+    if (s[i] > 5) return false;
+    count[s[i]]++;
+  }
+  return count.every((c) => c === 9);
+}
+
 export function fromKociemba(str: string): CubeState {
   const s = new Uint8Array(54);
   for (let i = 0; i < 54; i++) {

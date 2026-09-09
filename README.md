@@ -18,9 +18,8 @@ Cần **Chrome hoặc Edge** (trên desktop hoặc Android) — Web Bluetooth kh
 Safari và iOS. Không có smart cube vẫn dùng được: bấm giờ bằng phím cách, hoặc bật
 "khối ảo bàn phím" trong Cài đặt để thử toàn bộ tính năng.
 
-Muốn dùng trên điện thoại Android trong cùng mạng LAN: `npm run dev` đã bật `--host`,
-nhưng Web Bluetooth đòi HTTPS hoặc localhost, nên trên điện thoại cần build rồi phục vụ
-qua HTTPS (hoặc bật cờ `chrome://flags/#unsafely-treat-insecure-origin-as-secure`).
+Trên điện thoại Android thì mở thẳng bản đã triển khai (có HTTPS). Xem thêm mục địa chỉ
+MAC bên dưới — trên điện thoại thường phải nhập tay một lần.
 
 ## Bốn tính năng
 
@@ -86,6 +85,25 @@ cùng họ với Sune, không phải do gõ tay. Chữ ký case được chuẩn
 nước U trước alg vẫn ra đúng một case; còn thêm U *sau* alg thì là case khác thật, vì
 đích của CMLL là bốn góc về đúng chỗ so với hai khối.
 
+## Địa chỉ MAC của cube (hay gặp khi dùng điện thoại)
+
+GAN mã hoá dữ liệu bluetooth bằng khoá **trộn từ chính địa chỉ MAC của cube**, nên MAC là
+bắt buộc chứ không phải tuỳ chọn — thiếu nó thì mọi gói tin giải mã ra rác. Trình duyệt
+chỉ đọc được MAC qua `watchAdvertisements()`, mà API này trên Chrome Android nằm sau cờ
+thử nghiệm, nên trên điện thoại thường phải nhập tay một lần.
+
+Hai cách:
+
+- **Nhập tay một lần.** App hiện hộp thoại kèm hướng dẫn tìm MAC, nhận mọi kiểu gõ
+  (`AB:CD:EF:12:34:56`, `ab-cd-ef-12-34-56`, hay `abcdef123456`), rồi nhớ luôn cho lần sau.
+  Tìm MAC dễ nhất bằng app quét Bluetooth như nRF Connect trên Android.
+- **Hoặc bật cờ để khỏi nhập.** `chrome://flags` → *Experimental Web Platform features* →
+  khởi động lại Chrome. Khi đó trình duyệt tự đọc MAC từ tín hiệu quảng bá của cube.
+
+Nhập nhầm MAC là trường hợp khó chịu nhất: cube vẫn "kết nối được" nhưng dữ liệu ra rác.
+App tự bắt chuyện này bằng cách kiểm tra trạng thái đọc về có đúng mỗi màu 9 ô không, và
+nói thẳng là MAC sai thay vì để bạn ngồi đoán. Vào Cài đặt xoá MAC đã lưu rồi nhập lại.
+
 ## Khi app và khối thật lệch nhau
 
 Hai kiểu lệch, hai cách xử lý khác nhau, đều có nút riêng ở trang Bấm giờ và trong Cài đặt:
@@ -141,7 +159,7 @@ chuyển để đoán, nhưng lúc giải nhanh tay rung nhiều nên không đ�
 ## Kiểm thử
 
 ```bash
-npm test            # 177 khẳng định, chạy trong vài giây
+npm test            # 193 khẳng định, chạy trong vài giây
 npm run check:lse   # duyệt toàn bộ 184.320 trạng thái của nhóm LSE ⟨M, U⟩
 ```
 

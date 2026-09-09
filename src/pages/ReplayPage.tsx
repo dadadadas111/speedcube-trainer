@@ -126,7 +126,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
         <ScrambleDisplay moves={scramble} size="md" className="!text-ink-300" />
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         {/* Khối + điều khiển phát lại */}
         <section className="panel p-4">
           <div className="flex justify-center">
@@ -204,7 +204,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
           </label>
         </section>
 
-        <div className="flex flex-col gap-5">
+        <div className="flex min-w-0 flex-col gap-5">
           <section className="panel p-4">
             <StepRibbon
               steps={analysis.steps}
@@ -232,8 +232,8 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
 
           {/* Từng nước một, độ rộng tỉ lệ với thời gian thật */}
           <section className="panel p-4">
-            <div className="mb-2 flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold">Từng nước</h2>
+            <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+              <h2 className="shrink-0 text-sm font-semibold">Từng nước</h2>
               <span className="flex flex-wrap items-center gap-3 text-[12px] text-ink-400">
                 <span>Vệt dưới mỗi nước dài theo thời gian, màu theo nhanh/chậm so với chính bạn</span>
                 {(['rất nhanh', 'bình thường', 'chậm', 'đứng hình'] as const).map((v) => (
@@ -255,7 +255,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
             />
           </section>
 
-          <section className="panel overflow-hidden">
+          <section className="panel overflow-x-auto">
             <table className="data">
               <thead>
                 <tr>
@@ -403,19 +403,17 @@ function MoveReviewPanel({
               <button
                 type="button"
                 onClick={() => onJump(r.index)}
-                className="flex w-full items-center gap-3 rounded-[4px] px-2 py-1 text-left hover:bg-ink-800"
+                className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 rounded-[4px] px-2 py-1 text-left hover:bg-ink-800"
               >
-                <span className="tnum w-8 shrink-0 text-[12px] text-ink-500">#{r.index}</span>
-                <span className="w-24 shrink-0 font-mono text-[13px]">
+                <span className="tnum w-7 shrink-0 text-[12px] text-ink-500">#{r.index}</span>
+                <span className="w-[5.5rem] shrink-0 font-mono text-[13px]">
                   {r.prevMove} <span className="text-ink-500">→</span> {r.move}
                 </span>
                 <span className="tnum w-16 shrink-0 font-mono text-[13px]" style={{ color: VERDICT_COLORS[r.verdict] }}>
                   {Math.round(r.deltaMs)}ms
                 </span>
-                <span className="tnum w-20 shrink-0 text-[12px] text-ink-400">
-                  thường {Math.round(r.baselineMs)}ms
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[12px] text-ink-400">{r.stepLabel}</span>
+                <span className="tnum shrink-0 text-[12px] text-ink-400">thường {Math.round(r.baselineMs)}ms</span>
+                <span className="hidden min-w-0 flex-1 truncate text-[12px] text-ink-400 sm:block">{r.stepLabel}</span>
                 <span className="shrink-0 text-[12px]" style={{ color: VERDICT_COLORS[r.verdict] }}>
                   {r.verdict}
                 </span>

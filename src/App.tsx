@@ -38,7 +38,10 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen">
-      <nav className="sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center gap-1 border-r border-ink-800 bg-ink-850 py-3 sm:w-[168px] sm:items-stretch sm:px-2">
+      {/* Bọc thêm một lớp để nền thanh điều hướng kéo hết chiều cao trang,
+          còn phần nội dung bên trong vẫn dính theo màn hình khi cuộn. */}
+      <div className="w-14 shrink-0 border-r border-ink-800 bg-ink-850 sm:w-[168px]">
+        <nav className="sticky top-0 flex h-screen flex-col items-center gap-1 py-3 sm:items-stretch sm:px-2">
         <div className="mb-4 px-1.5 sm:px-2">
           <div className="flex gap-[3px]">
             <span className="size-2.5 rounded-[2px] bg-cube-blue" />
@@ -65,9 +68,10 @@ export default function App() {
           >
             <span className="w-4 text-center text-base leading-none">{t.icon}</span>
             <span className="hidden sm:inline">{t.label}</span>
-          </button>
-        ))}
-      </nav>
+            </button>
+          ))}
+        </nav>
+      </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-800 px-4 py-2.5 sm:px-6">
