@@ -3,6 +3,7 @@ import { useApp } from '../store/app';
 import { db, type AlgEntry, type Rep } from '../store/db';
 import { SEED_ALGS } from '../data/seedAlgs';
 import AlgLibrary from '../components/AlgLibrary';
+import CaseTrainer from '../components/CaseTrainer';
 import { classifyCornerAlg, describeFamily } from '../analysis/cornerCase';
 import { formatAlg, invertAlg, parseAlg } from '../cube/alg';
 import { cleanMoveStream } from '../cube/moveStream';
@@ -33,6 +34,8 @@ export default function DrillPage() {
   const [reps, setReps] = useState<Rep[]>([]);
   const [repCounts, setRepCounts] = useState<Map<number, number>>(new Map());
   const [adding, setAdding] = useState(false);
+  const [mode, setMode] = useState<'one' | 'random'>('one');
+  const [scope, setScope] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     await seedOnce();
@@ -55,6 +58,37 @@ export default function DrillPage() {
   }, [selectedId, revision]);
 
   const selected = algs.find((a) => a.id === selectedId) ?? null;
+  const familyKey = (a: AlgEntry) => a.group + ' / ' + a.family;
+
+  const allFamilies = useMemo(() => {
+    const seen = new Map<string, { key: string; group: string; family: string; count: number }>();
+    for (const a of algs) {
+      const key = familyKey(a);
+      const cur = seen.get(key);
+      if (cur) cur.count++;
+      else seen.set(key, { key, group: a.group, family: a.family, count: 1 });
+    }
+    return [...seen.values()];
+  }, [algs]);
+
+  // Vào chế độ ngẫu nhiên thì mặc định lấy đúng họ của case đang chọn
+  useEffect(() => {
+    if (mode !== 'random' || scope.size > 0 || !selected) return;
+    setScope(new Set([familyKey(selected)]));
+  }, [mode, scope.size, selected]);
+
+  const pool = useMemo(
+    () => algs.filter((a) => scope.has(familyKey(a))),
+    [algs, scope],
+  );
+
+  const toggleScope = (key: string) =>
+    setScope((s) => {
+      const next = new Set(s);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const removeAlg = async (id: number) => {
     await db.reps.where('algId').equals(id).delete();
@@ -74,7 +108,58 @@ export default function DrillPage() {
       />
 
       <div className="flex flex-col gap-5">
-        {adding && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className={'btn !py-1 !text-[13px] ' + (mode === 'one' ? '!border-cube-blue !text-cube-blue' : '')}
+            onClick={() => setMode('one')}
+          >
+            Một case
+          </button>
+          <button
+            className={'btn !py-1 !text-[13px] ' + (mode === 'random' ? '!border-cube-blue !text-cube-blue' : '')}
+            onClick={() => setMode('random')}
+          >
+            Ngẫu nhiên trong họ
+          </button>
+        </div>
+
+        {mode === 'random' && (
+          <section className="panel p-4">
+            <p className="mb-2 text-[13px] text-ink-400">Chọn phạm vi luyện</p>
+            <div className="flex flex-wrap gap-1.5">
+              {allFamilies.map((f) => {
+                const on = scope.has(f.key);
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => toggleScope(f.key)}
+                    className={
+                      'rounded-full border px-2.5 py-1 text-[13px] transition-colors ' +
+                      (on
+                        ? 'border-cube-blue bg-[color-mix(in_srgb,var(--color-cube-blue)_18%,transparent)] text-ink-100'
+                        : 'border-ink-600 text-ink-300 hover:bg-ink-800')
+                    }
+                  >
+                    {f.family}
+                    <span className="ml-1.5 text-ink-500">{f.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {mode === 'random' && (
+          <CaseTrainer
+            pool={pool}
+            usingCube={usingCube}
+            keyboard={settings.keyboardCube}
+            repCounts={repCounts}
+            onRepSaved={() => void load()}
+          />
+        )}
+
+        {mode === 'one' && adding && (
           <AlgForm
             algs={algs}
             onClose={() => setAdding(false)}
@@ -86,7 +171,7 @@ export default function DrillPage() {
             keyboard={settings.keyboardCube}
           />
         )}
-        {selected ? (
+        {mode === 'one' && (selected ? (
           <AlgDetail
             key={selected.id}
             alg={selected}
@@ -98,7 +183,7 @@ export default function DrillPage() {
           />
         ) : (
           <p className="panel p-6 text-sm text-ink-400">Chọn một alg bên trái, hoặc thêm alg mới.</p>
-        )}
+        ))}
       </div>
     </div>
   );

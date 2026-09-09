@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/app';
 import { db, type Solve } from '../store/db';
 import { parseAlg } from '../cube/alg';
-import { analyzeSolveRecord } from '../analysis/pipeline';
+import { analyzeSolveRecord, analyzeMany } from '../analysis/pipeline';
+import { buildMoveBaseline, reviewSolve, VERDICT_COLORS, type MoveRating, type SolveReview } from '../analysis/moveReview';
 import { stepFacelets } from '../analysis/method';
 import { effectiveTime, formatSeconds, formatTime } from '../analysis/stats';
 import CubeView from '../components/CubeView';
@@ -16,6 +17,7 @@ const SPEEDS = [0.25, 0.5, 1, 2];
 export default function ReplayPage({ solveId, onBack }: { solveId: number; onBack: () => void }) {
   const { settings } = useApp();
   const [solve, setSolve] = useState<Solve | null>(null);
+  const [corpus, setCorpus] = useState<Solve[]>([]);
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -30,7 +32,15 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
     });
   }, [solveId]);
 
+  // Mốc so sánh lấy từ lịch sử của chính người dùng. Giới hạn 150 solve gần nhất
+  // cho vừa phải, và cũng để phản ánh phong độ hiện tại chứ không phải hồi mới tập.
+  useEffect(() => {
+    void db.solves.orderBy('date').reverse().limit(150).toArray().then(setCorpus);
+  }, []);
+
   const analysis = useMemo(() => (solve ? analyzeSolveRecord(solve, settings) : null), [solve, settings]);
+  const baseline = useMemo(() => buildMoveBaseline(analyzeMany(corpus, settings)), [corpus, settings]);
+  const review = useMemo(() => (analysis ? reviewSolve(analysis, baseline) : null), [analysis, baseline]);
   const scramble = useMemo(() => (solve ? parseAlg(solve.scramble) : []), [solve]);
 
   /** Ranh giới bước theo chỉ số nước, để biết đang ở bước nào */
@@ -209,15 +219,40 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
             </p>
           </section>
 
+          {review && (
+            <MoveReviewPanel
+              review={review}
+              current={review.ratings.find((r) => r.index === index) ?? null}
+              onJump={(i) => {
+                setPlaying(false);
+                setIndex(i);
+              }}
+            />
+          )}
+
           {/* Từng nước một, độ rộng tỉ lệ với thời gian thật */}
           <section className="panel p-4">
             <div className="mb-2 flex items-baseline justify-between">
               <h2 className="text-sm font-semibold">Từng nước</h2>
-              <span className="text-[13px] text-ink-400">
-                Ô càng rộng là càng lâu · vệt đỏ là chỗ dừng tay quá {Math.round(analysis.pauseThresholdMs)}ms
+              <span className="flex flex-wrap items-center gap-3 text-[12px] text-ink-400">
+                <span>Vệt dưới mỗi nước dài theo thời gian, màu theo nhanh/chậm so với chính bạn</span>
+                {(['rất nhanh', 'bình thường', 'chậm', 'đứng hình'] as const).map((v) => (
+                  <span key={v} className="flex items-center gap-1">
+                    <span className="inline-block h-[3px] w-3 rounded-[1px]" style={{ background: VERDICT_COLORS[v] }} />
+                    {v}
+                  </span>
+                ))}
               </span>
             </div>
-            <MoveTape analysis={analysis} index={index} onSeek={(i) => { setPlaying(false); setIndex(i); }} />
+            <MoveTape
+              analysis={analysis}
+              review={review}
+              index={index}
+              onSeek={(i) => {
+                setPlaying(false);
+                setIndex(i);
+              }}
+            />
           </section>
 
           <section className="panel overflow-hidden">
@@ -268,50 +303,140 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
 
 function MoveTape({
   analysis,
+  review,
   index,
   onSeek,
 }: {
   analysis: NonNullable<ReturnType<typeof analyzeSolveRecord>>;
+  review: SolveReview | null;
   index: number;
   onSeek: (i: number) => void;
 }) {
   const deltas = analysis.moves.map((m, i) => (i === 0 ? 0 : m.t - analysis.moves[i - 1].t));
   const maxDelta = Math.max(1, ...deltas);
   const stepOf = (i: number) => analysis.steps.find((s) => i > s.startIndex && i <= s.endIndex);
+  const ratingOf = (i: number) => review?.ratings.find((r) => r.index === i) ?? null;
 
   return (
     <div className="flex flex-wrap gap-1">
       {analysis.moves.map((m, i) => {
         const step = stepOf(i + 1);
         const d = deltas[i];
-        const isPause = d > analysis.pauseThresholdMs;
+        const rating = ratingOf(i);
+        const color = rating ? VERDICT_COLORS[rating.verdict] : stepColor(step?.key ?? '');
         const active = index === i + 1;
         return (
           <button
             key={i}
             type="button"
             onClick={() => onSeek(i + 1)}
-            title={`${m.move} · +${Math.round(d)}ms`}
+            title={
+              rating
+                ? `${m.move} · ${Math.round(d)}ms · ${rating.verdict} (thường ${Math.round(rating.baselineMs)}ms, mốc theo ${rating.basis})`
+                : `${m.move} · ${Math.round(d)}ms`
+            }
             className="relative flex flex-col items-center rounded-[3px] border px-1.5 py-1 font-mono text-[13px] transition-colors"
             style={{
               borderColor: active ? stepColor(step?.key ?? '') : 'var(--color-ink-700)',
               background: active ? 'color-mix(in srgb, ' + stepColor(step?.key ?? '') + ' 22%, transparent)' : 'transparent',
-              color: isPause ? 'var(--color-bad)' : 'var(--color-ink-100)',
+              color: rating && rating.verdict !== 'bình thường' ? color : 'var(--color-ink-100)',
             }}
           >
             <span>{m.move}</span>
             <span
               className="mt-1 block rounded-[1px]"
               style={{
-                width: `${Math.max(3, (d / maxDelta) * 26)}px`,
+                width: Math.max(3, (d / maxDelta) * 26) + 'px',
                 height: '3px',
-                background: isPause ? 'var(--color-bad)' : stepColor(step?.key ?? ''),
-                opacity: isPause ? 1 : 0.75,
+                background: color,
+                opacity: rating?.verdict === 'bình thường' ? 0.5 : 1,
               }}
             />
           </button>
         );
       })}
     </div>
+  );
+}
+
+/** Bảng đánh giá kiểu xem lại ván cờ, nhưng thang đo là nhanh/chậm. */
+function MoveReviewPanel({
+  review,
+  current,
+  onJump,
+}: {
+  review: SolveReview;
+  current: MoveRating | null;
+  onJump: (index: number) => void;
+}) {
+  return (
+    <section className="panel p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold">Đánh giá từng nước</h2>
+        <span className="text-[13px] text-ink-400">
+          so với tốc độ thường ngày của bạn, dựng từ {review.baselineSolves} solve
+        </span>
+      </div>
+
+      {!review.reliable && (
+        <p className="mt-2 text-[13px] text-warn">
+          Còn ít dữ liệu nên mốc so sánh chưa chắc. Giải thêm vài chục lần nữa thì phần này mới đáng tin.
+        </p>
+      )}
+
+      {review.lostMs > 250 ? (
+        <p className="mt-3 max-w-[68ch] text-sm text-ink-200">
+          <span className="tnum font-mono text-lg text-bad">{formatSeconds(review.lostMs)}s</span> mất thêm ở{' '}
+          {review.slowest.length} nước chậm bất thường. Nếu những nước đó chạy bằng tốc độ thường ngày của bạn
+          thì solve này còn <span className="tnum font-mono text-good">{formatSeconds(review.potentialMs)}s</span>.
+        </p>
+      ) : (
+        <p className="mt-3 text-sm text-good">
+          Không có nước nào khựng bất thường — cả bài chạy đều theo đúng nhịp thường ngày của bạn.
+        </p>
+      )}
+
+      {review.slowest.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-1">
+          {review.slowest.map((r) => (
+            <li key={r.index}>
+              <button
+                type="button"
+                onClick={() => onJump(r.index)}
+                className="flex w-full items-center gap-3 rounded-[4px] px-2 py-1 text-left hover:bg-ink-800"
+              >
+                <span className="tnum w-8 shrink-0 text-[12px] text-ink-500">#{r.index}</span>
+                <span className="w-24 shrink-0 font-mono text-[13px]">
+                  {r.prevMove} <span className="text-ink-500">→</span> {r.move}
+                </span>
+                <span className="tnum w-16 shrink-0 font-mono text-[13px]" style={{ color: VERDICT_COLORS[r.verdict] }}>
+                  {Math.round(r.deltaMs)}ms
+                </span>
+                <span className="tnum w-20 shrink-0 text-[12px] text-ink-400">
+                  thường {Math.round(r.baselineMs)}ms
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-ink-400">{r.stepLabel}</span>
+                <span className="shrink-0 text-[12px]" style={{ color: VERDICT_COLORS[r.verdict] }}>
+                  {r.verdict}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {current && (
+        <p className="mt-3 border-t border-ink-700 pt-3 text-[13px] text-ink-300">
+          Nước đang xem:{' '}
+          <span className="font-mono text-ink-100">
+            {current.prevMove} → {current.move}
+          </span>{' '}
+          mất <span className="tnum font-mono">{Math.round(current.deltaMs)}ms</span>, bạn thường mất{' '}
+          <span className="tnum font-mono">{Math.round(current.baselineMs)}ms</span> —{' '}
+          <span style={{ color: VERDICT_COLORS[current.verdict] }}>{current.verdict}</span>{' '}
+          <span className="text-ink-500">(mốc theo {current.basis})</span>
+        </p>
+      )}
+    </section>
   );
 }

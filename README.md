@@ -40,16 +40,40 @@ phân biệt màu nên vặn nhầm mặt đối diện (cam thay vì đỏ) v�
 từng nước, xem khối ở mọi thời điểm với các miếng của bước hiện tại được tô sáng.
 Dải "từng nước" cho thấy ô nào rộng (lâu) và chỗ nào bị tính là dừng tay.
 
-**3. Báo cáo.** Xu hướng thời gian kèm ao5/ao12, cấu trúc solve theo thời gian, tỷ trọng
+**3. Xem lại và chấm điểm từng nước.** Kiểu xem lại ván cờ, nhưng thang đo là
+**nhanh/chậm** chứ không phải hay/dở — app không biết nước nào là lựa chọn tốt, nhưng
+biết rất rõ nước nào chậm hơn tốc độ thường ngày của chính bạn.
+
+Mốc so sánh dựng từ lịch sử của bạn, theo ba tầng dự phòng: đúng cặp nước đó
+(`R' → U2`), rồi cặp mặt (`R → U`), rồi bước đang làm (FB, SB, CMLL...). Nhờ vậy "chậm"
+có nghĩa là chậm *trong đúng tình huống đó*. Ví dụ có thật từ test: cùng 200ms, nhưng
+đi sau nước `R` thì là **chậm**, còn đi sau nước `U` lại là **nhanh** — một con số chung
+chung không phân biệt được chuyện này.
+
+Kết quả ra thành một câu đọc được ngay: *"3.23s mất thêm ở 5 nước chậm bất thường. Nếu
+những nước đó chạy bằng tốc độ thường ngày của bạn thì solve này còn 14.04s."* Kèm danh
+sách những nước tốn kém nhất, bấm vào là nhảy thẳng tới đúng nước đó trong replay.
+
+**4. Báo cáo.** Xu hướng thời gian kèm ao5/ao12, cấu trúc solve theo thời gian, tỷ trọng
 từng bước so với hồ sơ tham chiếu, tỷ lệ đứng yên từng bước, số nước từng bước.
 Phần "Nên cải thiện gì" xếp hạng các nút thắt theo số giây bạn đang mất, và phân biệt
 nguyên nhân: **nhận dạng/nhìn trước** (dừng nhiều) hay **thực thi** (TPS thấp) hay
 **hiệu quả lời giải** (nhiều nước) — ba nguyên nhân đó cần ba cách tập khác nhau.
 
-**4. Drill alg.** Nhập alg bằng chữ hoặc **thực hiện thẳng trên cube để app ghi lại**.
+**5. Drill alg.** Nhập alg bằng chữ hoặc **thực hiện thẳng trên cube để app ghi lại**.
 Vào drill: app dựng case, chờ bạn vặn khối về đúng case rồi tự đếm giờ. Sau nhiều lần,
 app dựng biểu đồ thời gian trung vị của **từng nước** trong alg và chỉ ra nước nào bạn
 hay khựng — thường là chỗ phải đổi cách cầm.
+
+Có hai chế độ: luyện **một case** cụ thể, hoặc **ngẫu nhiên trong họ** — chọn vài họ rồi
+app bốc ngẫu nhiên, dẫn bạn vặn khối vào case đó và tính giờ từ lúc vào case tới lúc giải
+xong. Case chưa luyện lần nào được bốc trúng nhiều hơn để không bỏ sót, và cuối phiên có
+bảng xếp hạng case nào đang chậm nhất.
+
+*Một chỗ phải nói thẳng:* chuỗi setup chính là alg đảo ngược, nên nhìn cả chuỗi là biết
+luôn case. Vì thế mặc định app chỉ hiện **từng nước một** — vặn theo kiểu máy móc thì lúc
+xong vẫn phải tự nhận dạng. Muốn scramble trông thật sự ngẫu nhiên như csTimer thì cần
+một bộ giải hai pha, tôi chưa làm.
 
 Thư viện xếp hai tầng **họ → case** (bấm Sune rồi mới chọn case bên trong), kèm ô tìm
 kiếm và số case đã luyện của từng họ, để còn dùng được khi có hàng trăm alg. Họ nào chỉ
@@ -117,7 +141,7 @@ chuyển để đoán, nhưng lúc giải nhanh tay rung nhiều nên không đ�
 ## Kiểm thử
 
 ```bash
-npm test            # 154 khẳng định, chạy trong vài giây
+npm test            # 177 khẳng định, chạy trong vài giây
 npm run check:lse   # duyệt toàn bộ 184.320 trạng thái của nhóm LSE ⟨M, U⟩
 ```
 
