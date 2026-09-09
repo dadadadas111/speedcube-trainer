@@ -1,4 +1,4 @@
-/** Gộp hai nguồn nhập: smart cube thật và khối ảo bàn phím. */
+/** Merges the two input sources: a real smart cube and the keyboard cube. */
 
 import { useEffect, useRef } from 'react';
 import { cubeLink, type LiveMove } from './connection';
@@ -11,8 +11,8 @@ export interface CubeInputHandlers {
 }
 
 /**
- * `keyboard` bật chế độ khối ảo. Handler được giữ trong ref nên component
- * không cần memo hoá callback.
+ * `keyboard` enables the virtual cube. Handlers are kept in a ref so callers
+ * need not memoise their callbacks.
  */
 export function useCubeInput(handlers: CubeInputHandlers, keyboard: boolean) {
   const ref = useRef(handlers);
@@ -43,7 +43,7 @@ export function useCubeInput(handlers: CubeInputHandlers, keyboard: boolean) {
   }, [keyboard]);
 }
 
-/** Nguồn trạng thái đang dùng: khối ảo nếu bật demo, ngược lại là khối thật. */
+/** The active state source: the virtual cube when enabled, otherwise the real one. */
 export function currentCubeState(keyboard: boolean): CubeState {
   return keyboard ? virtualCube.getState() : cubeLink.getState();
 }

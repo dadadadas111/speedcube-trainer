@@ -1,56 +1,56 @@
 /**
- * Dẫn người dùng vặn scramble từ trạng thái đã giải.
+ * Guiding the user through a scramble from the solved state.
  *
- * So khớp theo khoá bất biến-với-phép-quay, nên bạn cầm khối kiểu gì cũng được:
- * chỉ cần thực hiện đúng chuỗi nước theo ký hiệu trong hệ quy chiếu của chính
- * mình. Khoá này vẫn phân biệt màu, nên vặn nhầm mặt (ví dụ mặt cam thay vì mặt
- * đỏ) sẽ bị bắt lỗi ngay.
+ * Matching uses the rotation-invariant key, so you may hold the cube however you
+ * like: just perform the notation in your own frame of reference. The key is
+ * still colour-aware, so turning the wrong face (orange instead of red, say) is
+ * caught immediately.
  *
- * Có ba trạng thái chứ không phải hai. Lý do: cube báo một nước 180 độ thành HAI
- * sự kiện quý riêng biệt, nên vặn U2 thì sau nửa đầu trạng thái khối chưa khớp
- * bước nào cả. Nếu chỉ có đúng/sai thì màn hình sẽ nháy đỏ giữa chừng mỗi lần
- * gặp U2 hay R2 — rất khó chịu. Vì vậy: đang vặn đúng mặt nhưng chưa đủ vòng thì
- * là "đang vặn dở" (vàng), chỉ khi đụng sang mặt khác mới tính là sai (đỏ).
+ * There are three states, not two. A cube reports a half turn as TWO separate
+ * quarter-turn events, so halfway through a U2 the cube state matches no step at
+ * all. With only right/wrong the screen would flash red mid-turn on every U2 or
+ * R2, which is maddening. Hence: right face but not far enough around is
+ * "partial" (amber), and only touching a different face counts as wrong (red).
  */
 
 import { SOLVED_STATE, applyMove, canonicalKey, stateSequence, type CubeState } from '../cube/cube';
 import { invertAlg, simplifyAlg, moveFace, moveAmount, makeMove } from '../cube/alg';
 
 export type ScrambleStatus =
-  /** Khối không ở trạng thái đã giải mà cũng không khớp bước nào — cần đồng bộ hoặc giải lại */
+  /** Neither solved nor matching any step — needs a resync or a fresh solve */
   | 'unknown'
-  /** Đang ở đúng đường, chưa xong */
+  /** On track, not finished yet */
   | 'on-track'
-  /** Đang vặn đúng mặt nhưng chưa tới đúng vòng (ví dụ mới vặn được nửa của U2) */
+  /** Turning the right face but not far enough yet (half of a U2, say) */
   | 'partial'
-  /** Đã vặn xong toàn bộ scramble */
+  /** The whole scramble is done */
   | 'complete'
-  /** Vặn sai, cần quay lại */
+  /** Wrong turn, needs backing out */
   | 'off-track';
 
 export interface ScrambleProgress {
   status: ScrambleStatus;
-  /** Số nước của scramble đã vặn đúng */
+  /** How many scramble moves are correctly done */
   done: number;
   total: number;
-  /** Nước tiếp theo cần vặn, null nếu đã xong hoặc đang lạc */
+  /** The next move to make; null when finished or off track */
   next: string | null;
-  /** Khi đang vặn dở: còn phải vặn thêm bao nhiêu nữa trên mặt đó */
+  /** While partial: how much further to turn that same face */
   remaining: string | null;
-  /** Chuỗi cần vặn để quay về đúng đường (chỉ có khi off-track) */
+  /** The sequence that gets back on track (only when off track) */
   fix: string[];
-  /** Số nước đã vặn sai kể từ lúc lạc đường */
+  /** How many wrong moves since going off track */
   wrongMoves: number;
 }
 
 export class ScrambleTracker {
   private keys: string[];
   /**
-   * Với mỗi bước, các trạng thái "đang vặn dở" của đúng mặt đó: khoá -> phần
-   * còn thiếu. Ví dụ bước U2 thì vặn U mới được một nửa, còn thiếu U.
+   * Per step, the "partly turned" states of that same face: key -> what is
+   * still missing. For a U2 step, one U is halfway there and one U remains.
    */
   private partials: Map<string, string>[];
-  /** Các nước đã vặn kể từ điểm đúng gần nhất */
+  /** Moves made since the last correct position */
   private strayMoves: string[] = [];
   private done = 0;
   private lost = false;
@@ -67,7 +67,7 @@ export class ScrambleTracker {
       const want = moveAmount(move);
       const map = new Map<string, string>();
       for (let turned = 1; turned <= 3; turned++) {
-        if (turned === want) continue; // đủ vòng rồi thì đã là bước kế tiếp
+        if (turned === want) continue; // a full turn is simply the next step
         const partial = makeMove(face, turned);
         const remaining = makeMove(face, want - turned);
         if (!partial || !remaining) continue;
@@ -82,14 +82,15 @@ export class ScrambleTracker {
   }
 
   /**
-   * Nạp trạng thái khối sau mỗi nước. `move` là nước vừa vặn (nếu biết) — dùng
-   * để dựng gợi ý sửa. Gọi không kèm `move` khi chỉ đồng bộ lại trạng thái.
+   * Feed the cube state after each move. `move` is the turn just made, when
+   * known, and is used to build the correction hint. Call without `move` when
+   * merely resyncing the state.
    */
   update(state: CubeState, move?: string): ScrambleProgress {
     const key = canonicalKey(state);
 
-    // Ưu tiên bước ngay kế tiếp, rồi mới tìm rộng ra — tránh nhảy lung tung khi
-    // scramble tình cờ có hai bước cho ra cùng một trạng thái.
+    // Prefer the immediate next step before searching wider, so we do not jump
+    // around if a scramble happens to revisit the same state twice.
     let found = -1;
     if (this.keys[this.done + 1] === key) found = this.done + 1;
     else if (this.keys[this.done] === key) found = this.done;
@@ -103,7 +104,7 @@ export class ScrambleTracker {
       return this.snapshot();
     }
 
-    // Đang vặn dở đúng mặt của bước hiện tại thì chưa phải là sai
+    // Partway through the right face for this step is not an error yet
     const remaining = this.partials[this.done]?.get(key);
     if (remaining) {
       this.partialRemaining = remaining;
@@ -118,7 +119,7 @@ export class ScrambleTracker {
     return this.snapshot();
   }
 
-  /** Quên hết dấu vết cũ, coi như bắt đầu lại từ trạng thái hiện tại. */
+  /** Forget all history and start over from the current state. */
   reset(state: CubeState): ScrambleProgress {
     this.done = 0;
     this.strayMoves = [];
@@ -142,8 +143,8 @@ export class ScrambleTracker {
         ...base,
         status: 'off-track',
         next: null,
-        // Nếu biết đã vặn sai những gì thì chỉ cần vặn ngược lại. Không biết
-        // (mất kết nối giữa chừng) thì hướng dẫn về trạng thái đã giải rồi làm lại.
+        // If we know what was turned wrongly, undoing it is enough. If we do
+        // not (a dropped connection), tell the user to solve and start over.
         fix: this.strayMoves.length ? simplifyAlg(invertAlg(this.strayMoves)) : [],
         wrongMoves: this.strayMoves.length,
       };
@@ -157,15 +158,15 @@ export class ScrambleTracker {
     return { ...base, status: 'on-track' };
   }
 
-  /** Trạng thái hiện tại mà không nạp gì thêm. */
+  /** The current progress without feeding anything new. */
   peek(): ScrambleProgress {
     return this.snapshot();
   }
 }
 
 /**
- * Khối có đang ở trạng thái đã giải (không quan tâm cầm hướng nào) không.
- * Dùng để biết đã sẵn sàng bắt đầu vặn scramble chưa.
+ * Is the cube solved, regardless of how it is held?
+ * Used to know whether we are ready to start scrambling.
  */
 export function isAtStart(state: CubeState, base: CubeState = SOLVED_STATE): boolean {
   return canonicalKey(state) === canonicalKey(base);

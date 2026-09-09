@@ -1,6 +1,6 @@
 interface Props {
   moves: string[];
-  /** Đánh dấu các nước đã "khớp" khi người dùng vặn theo scramble */
+  /** Extra classes for the notation block */
   className?: string;
   size?: 'lg' | 'md';
 }

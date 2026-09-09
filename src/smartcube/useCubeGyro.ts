@@ -1,6 +1,6 @@
 /**
- * Hướng của cube thật, đã hạn chế nhịp cập nhật theo khung hình.
- * Con quay bắn về khoảng 50 lần mỗi giây; render từng lần là phí.
+ * The real cube's orientation, throttled to one update per animation frame.
+ * The gyroscope fires around 50 times a second; rendering each one is wasteful.
  */
 
 import { useEffect, useRef, useState } from 'react';

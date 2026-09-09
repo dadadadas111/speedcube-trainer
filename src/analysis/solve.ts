@@ -1,11 +1,11 @@
-/** Bóc tách một solve thành các bước, tính TPS, quãng dừng và điểm yếu. */
+/** Breaking a solve into steps, with TPS, pauses and weak spots. */
 
 import { SOLVED_STATE, applyMoves, stateSequence, isSolved, type CubeState } from '../cube/cube';
 import type { TimedMove } from '../cube/moveStream';
-import { detectStages, stagesFor, guessMethod, type MethodName, type StageDetection } from './method';
+import { scanStages, stagesFor, guessMethod, type MethodName, type StageDetection } from './method';
 
 export interface PauseInfo {
-  /** Dừng xảy ra ngay TRƯỚC nước thứ moveIndex */
+  /** The pause happened immediately BEFORE move number moveIndex */
   moveIndex: number;
   ms: number;
 }
@@ -23,7 +23,7 @@ export interface StepAnalysis {
   tps: number;
   pauses: PauseInfo[];
   pauseMs: number;
-  /** Hướng cầm khối phát hiện được ở cuối bước (để vẽ minh hoạ) */
+  /** Orientation detected at the end of the step, used for rendering */
   rotation: Uint8Array | null;
   detected: boolean;
 }
@@ -37,20 +37,26 @@ export interface SolveAnalysis {
   totalMoves: number;
   tps: number;
   pauseMs: number;
-  /** Tỷ lệ thời gian không quay tay */
+  /** Fraction of the solve spent not turning */
   pauseRatio: number;
   longestPause: PauseInfo | null;
-  /** Ngưỡng dừng thực tế đã dùng (ms) */
+  /** The pause threshold actually used (ms) */
   pauseThresholdMs: number;
   complete: boolean;
   warning: string | null;
+  /**
+   * The colour scheme the solve was read in. The solver picks their own block
+   * colours, so this is whichever of the 24 relabellings made the steps line up
+   * — the replay needs it to highlight the right pieces.
+   */
+  colors: Uint8Array;
 }
 
 export interface AnalyzeOptions {
   method?: MethodName | 'auto';
-  /** Dừng = khoảng cách giữa hai nước vượt ngưỡng này */
+  /** A pause is a gap between moves longer than this */
   minPauseMs?: number;
-  /** ...và vượt bội số này so với khoảng cách trung vị của chính solve đó */
+  /** ...and longer than this multiple of the solve's own median gap */
   pauseFactor?: number;
 }
 
@@ -73,9 +79,9 @@ export function analyzeSolve(
   const start = applyMoves(SOLVED_STATE, scramble);
   const states = stateSequence(start, moves.map((m) => m.move));
   const method: MethodName = !opts.method || opts.method === 'auto' ? guessMethod(states) : opts.method;
-  const detections = detectStages(states, stagesFor(method));
+  const { detections, colors } = scanStages(states, stagesFor(method));
 
-  // Khoảng cách giữa các nước; nước đầu tính từ mốc 0 (đồng hồ chạy từ nước đầu)
+  // Gaps between moves; the first is measured from 0 (the timer starts on move one)
   const deltas: number[] = [];
   for (let i = 0; i < moves.length; i++) deltas.push(i === 0 ? 0 : moves[i].t - moves[i - 1].t);
   const med = median(deltas.slice(1).filter((d) => d > 0));
@@ -114,7 +120,7 @@ export function analyzeSolve(
     cursorMs = endMs;
   }
 
-  // Thời gian còn lại sau nước cuối (thả tay, bấm dừng) gán vào bước cuối
+  // Time after the last move (letting go, stopping the timer) goes to the last step
   const last = steps[steps.length - 1];
   if (last && totalMs > last.endMs) {
     last.endMs = totalMs;
@@ -140,10 +146,11 @@ export function analyzeSolve(
     longestPause: allPauses.length ? allPauses.reduce((a, b) => (b.ms > a.ms ? b : a)) : null,
     pauseThresholdMs: threshold,
     complete,
+    colors,
     warning: !complete
-      ? 'Dòng nước không kết thúc ở trạng thái đã giải — có thể bluetooth rớt vài nước.'
+      ? 'The move stream does not end solved — bluetooth may have dropped some moves.'
       : undetected.length
-        ? `Không nhận ra bước: ${undetected.join(', ')}. Có thể bạn dùng biến thể khác của phương pháp.`
+        ? `Steps not recognised: ${undetected.join(', ')}. You may be using a variant of the method.`
         : null,
   };
 }

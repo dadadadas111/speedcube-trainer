@@ -1,14 +1,14 @@
 /**
- * Xử lý địa chỉ MAC của smart cube, tách riêng khỏi phần Bluetooth để chạy được
- * cả ngoài trình duyệt (thư viện BLE không nạp được trong Node nên test sẽ vỡ).
+ * Smart cube MAC handling, kept separate from the Bluetooth code so it runs
+ * outside a browser too (the BLE library will not load in Node, breaking tests).
  */
 
 export const MAC_STORAGE_KEY = 'sct.cubeMac';
 
 /**
- * Chuẩn hoá địa chỉ MAC: nhận mọi kiểu người ta hay gõ (có dấu hai chấm, dấu
- * gạch, khoảng trắng, hoặc dính liền) và trả về dạng AB:CD:EF:12:34:56.
- * Trả về null nếu không phải 6 byte hex.
+ * Normalise a MAC address: accept every way people type it (colons, dashes,
+ * spaces, or run together) and return AB:CD:EF:12:34:56 form.
+ * Returns null if it is not 6 hex bytes.
  */
 export function normalizeMac(input: string): string | null {
   const hex = input.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
@@ -16,7 +16,7 @@ export function normalizeMac(input: string): string | null {
   return (hex.match(/.{2}/g) ?? []).join(':');
 }
 
-/** Danh sách MAC đã lưu, để người dùng xoá đi khi gõ nhầm. */
+/** The saved MAC addresses, so the user can delete a mistyped one. */
 export function savedMacs(): { key: string; label: string; mac: string }[] {
   const out: { key: string; label: string; mac: string }[] = [];
   for (let i = 0; i < localStorage.length; i++) {

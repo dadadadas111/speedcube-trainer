@@ -1,4 +1,4 @@
-/** Thống kê chuẩn WCA: trung bình cắt đầu đuôi, mo3, best, độ lệch chuẩn. */
+/** WCA-style statistics: trimmed averages, means, best, standard deviation. */
 
 export interface TimedSolveLike {
   timeMs: number;
@@ -12,7 +12,7 @@ export function effectiveTime(s: TimedSolveLike): number {
   return s.penalty === '+2' ? s.timeMs + 2000 : s.timeMs;
 }
 
-/** Trung bình WCA: bỏ nhanh nhất và chậm nhất, DNF tính là chậm nhất. */
+/** WCA average: drop the best and worst; a DNF counts as the worst. */
 export function averageOf(times: number[]): number {
   const n = times.length;
   if (n < 3) return NaN;
@@ -37,7 +37,7 @@ export function stdevOf(times: number[]): number {
   return Math.sqrt(ok.reduce((a, b) => a + (b - m) ** 2, 0) / (ok.length - 1));
 }
 
-/** Trung bình trượt n solve gần nhất, tính tại mọi thời điểm. `times` theo thứ tự thời gian. */
+/** Rolling average of the last n solves, at every point. `times` is chronological. */
 export function rollingAverage(times: number[], n: number): (number | null)[] {
   return times.map((_, i) => (i + 1 < n ? null : averageOf(times.slice(i + 1 - n, i + 1))));
 }

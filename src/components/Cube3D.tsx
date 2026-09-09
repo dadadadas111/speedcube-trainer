@@ -1,9 +1,9 @@
 /**
- * Khối rubik 3D bằng CSS transform — không cần thư viện đồ hoạ nào.
+ * A 3D cube built from CSS transforms — no graphics library needed.
  *
- * Vị trí và pháp tuyến của 54 ô màu lấy thẳng từ mô hình toạ độ trong
- * cube/geometry.ts, tức là cùng một nguồn sự thật với engine giải. Hệ toạ độ CSS
- * có trục Y hướng xuống nên mọi chỗ đổi từ mô hình sang CSS đều lật dấu Y.
+ * The position and normal of all 54 stickers come straight from the coordinate
+ * model in cube/geometry.ts, the same source of truth the solver engine uses.
+ * The CSS Y axis points down, so every model-to-CSS conversion flips Y.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -21,31 +21,31 @@ export interface Quaternion {
 interface Props {
   state: CubeState;
   viewRotation?: Uint8Array | null;
-  /** Facelet cần làm nổi bật; các ô còn lại mờ đi */
+  /** Facelets to highlight; the rest dim */
   highlight?: number[] | null;
   size?: number;
-  /** Hướng từ con quay của cube. Có giá trị thì khối trên màn hình xoay theo tay bạn. */
+  /** Orientation from the cube's gyroscope. When set, the on-screen cube follows your hands. */
   quaternion?: Quaternion | null;
-  /** Cho kéo chuột để xoay (mặc định bật) */
+  /** Allow dragging to rotate (on by default) */
   interactive?: boolean;
   /**
-   * Đang quay dở một nước: `state` là trạng thái TRƯỚC nước đó, còn lớp liên
-   * quan sẽ được vẽ nghiêng theo `progress` (0 tới 1).
+   * A turn in progress: `state` is the state BEFORE the move, and the affected
+   * layer is drawn rotated by `progress` (0 to 1).
    */
   animate?: { move: string; progress: number } | null;
   className?: string;
 }
 
 /**
- * Hệ toạ độ CSS có trục Y hướng xuống, nên phép quay quanh X và Z bị đảo dấu so
- * với hệ mô hình, còn quanh Y thì giữ nguyên.
+ * The CSS Y axis points down, so rotations about X and Z flip sign relative to
+ * the model, while rotations about Y stay the same.
  */
 const CSS_AXIS = ['rotateX', 'rotateY', 'rotateZ'] as const;
 const CSS_SIGN = [-1, 1, -1];
 
 /**
- * Nhịp của một nước quay: nhanh lúc đầu, chậm dần rồi vọt quá một chút và trả
- * về — giống cảm giác lớp cube bật vào khớp chứ không phải trượt đều.
+ * The easing of a turn: fast at first, slowing, overshooting slightly and
+ * settling back — the feel of a layer clicking into place, not sliding evenly.
  */
 function easeTurn(p: number): number {
   if (p >= 1) return 1;
@@ -54,7 +54,7 @@ function easeTurn(p: number): number {
   return 1 + t * t * ((c + 1) * t + c);
 }
 
-/** Nhân sáng một màu hex, dùng cho phần đổ bóng theo hướng nhìn. */
+/** Scale a hex colour's brightness, used for view-dependent shading. */
 function shade(hex: string, k: number): string {
   const n = parseInt(hex.slice(1), 16);
   const f = (v: number) => Math.max(0, Math.min(255, Math.round(v * k)));
@@ -80,17 +80,17 @@ const mul3 = (a: Mat3, b: Mat3): Mat3 =>
 const apply3 = (m: Mat3, v: readonly number[]) =>
   [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
 
-/** Nguồn sáng cố định so với người xem: hơi chếch trên, trái và trước. */
+/** A light fixed relative to the viewer: slightly up, left and in front. */
 const LIGHT = (() => {
   const v = [-0.35, -0.55, 0.76];
   const len = Math.hypot(...v);
   return v.map((x) => x / len);
 })();
 
-/** Góc nhìn mặc định: thấy được mặt trên, mặt trước và mặt phải. */
+/** Default view angle: the top, front and right faces are all visible. */
 const DEFAULT_VIEW = { rx: -22, ry: -32 };
 
-/** Xoay div từ mặt phẳng mặc định (hướng +Z của CSS) sang đúng pháp tuyến của mỗi mặt. */
+/** Rotate a div from its default plane (facing CSS +Z) onto each face's normal. */
 function faceRotation(n: readonly number[]): string {
   if (n[1] === 1) return 'rotateX(90deg)';   // U
   if (n[1] === -1) return 'rotateX(-90deg)'; // D
@@ -100,7 +100,7 @@ function faceRotation(n: readonly number[]): string {
   return 'rotateY(180deg)';                  // B
 }
 
-/** Sáu mặt thân khối màu đen, để không nhìn xuyên qua khe giữa các ô màu. */
+/** Six black body faces, so you cannot see through the gaps between stickers. */
 const BODY_FACES = [
   [0, 1, 0],
   [0, -1, 0],
@@ -111,23 +111,23 @@ const BODY_FACES = [
 ] as const;
 
 /**
- * Quaternion của cube -> ma trận CSS.
+ * The cube's quaternion -> a CSS matrix.
  *
- * Cube báo hướng trong hệ trục riêng: +X là mặt đỏ, +Y là mặt xanh dương,
- * +Z là mặt trắng. Mô hình của app thì +x phải, +y lên (trắng), +z trước (xanh lá).
- * Nên phải đổi cơ sở trước, rồi mới lật trục Y để sang hệ CSS.
+ * The cube reports orientation in its own axes: +X is the red face, +Y the blue
+ * one, +Z the white one. The app's model has +x right, +y up (white), +z front
+ * (green). So we change basis first, then flip Y for CSS.
  */
 function quaternionToMatrix3d(q: Quaternion): string {
   const { x, y, z, w } = q;
   const n = Math.hypot(x, y, z, w) || 1;
   const [qx, qy, qz, qw] = [x / n, y / n, z / n, w / n];
-  // ma trận quay trong hệ trục của cube
+  // rotation matrix in the cube's own axes
   const g = [
     [1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
     [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
     [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)],
   ];
-  // đổi cơ sở cube -> mô hình: Xc=x, Yc=-z, Zc=y  (cột là ảnh của trục cube)
+  // basis change cube -> model: Xc=x, Yc=-z, Zc=y (columns are the cube axes' images)
   const C = [
     [1, 0, 0],
     [0, 0, 1],
@@ -141,14 +141,14 @@ function quaternionToMatrix3d(q: Quaternion): string {
     [C[0][2], C[1][2], C[2][2]],
   ];
   const m = mul(mul(C, g), Ct);
-  // hệ CSS lật trục Y
+  // CSS flips the Y axis
   const D = [
     [1, 0, 0],
     [0, -1, 0],
     [0, 0, 1],
   ];
   const c = mul(mul(D, m), D);
-  // matrix3d nhận theo cột
+  // matrix3d takes column-major order
   return `matrix3d(${c[0][0]},${c[1][0]},${c[2][0]},0,${c[0][1]},${c[1][1]},${c[2][1]},0,${c[0][2]},${c[1][2]},${c[2][2]},0,0,0,0,1)`;
 }
 
@@ -172,8 +172,8 @@ export default function Cube3D({
   const layerTransform = turn ? `${CSS_AXIS[turn.axis]}(${layerDeg}deg) ` : '';
 
   /**
-   * Ma trận hướng nhìn hiện tại, để tính độ sáng từng mặt. Không có phần này thì
-   * khối trông phẳng lì như hình dán, có rồi mới ra khối ba chiều.
+   * The current view matrix, used to shade each face. Without it the cube looks
+   * as flat as a sticker sheet; with it, it reads as a solid.
    */
   const viewMatrix = useMemo<Mat3>(() => {
     if (quaternion) {
@@ -203,8 +203,8 @@ export default function Cube3D({
     const cssN = [normal[0], -normal[1], normal[2]];
     const n = apply3(viewMatrix, inLayer ? apply3(layerMatrix, cssN) : cssN);
     const d = n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2];
-    // Nửa-lambert: mặt quay đi vẫn còn sáng chứ không tối sập, đủ để thấy khối
-    // ba chiều mà màu sticker không bị đục.
+    // Half-lambert: faces turned away stay lit rather than going black, enough
+    // to read as 3D without muddying the sticker colours.
     return 0.76 + 0.24 * (0.5 + 0.5 * d);
   };
 
@@ -234,7 +234,7 @@ export default function Cube3D({
     drag.current = null;
   }, []);
 
-  // Bàn phím: mũi tên để xoay, cho người không dùng chuột
+  // Keyboard: arrow keys rotate, for anyone not using a mouse
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 45 : 15;
     const map: Record<string, [number, number]> = {
@@ -268,8 +268,8 @@ export default function Cube3D({
       onKeyDown={onKeyDown}
       tabIndex={interactive && !quaternion ? 0 : -1}
       role="img"
-      aria-label="Khối rubik ba chiều"
-      title={quaternion ? 'Đang xoay theo con quay của cube' : interactive ? 'Kéo để xoay' : undefined}
+      aria-label="Cube, three dimensional"
+      title={quaternion ? 'Following the cube gyroscope' : interactive ? 'Drag to rotate' : undefined}
     >
       <div
         style={{
@@ -301,7 +301,7 @@ export default function Cube3D({
           const n = FACELET_NORMAL[i];
           const dim = hl ? !hl.has(i) : false;
           const inLayer = turn?.inLayer(i) ?? false;
-          // đẩy ra ngoài một chút cho khỏi chồng mặt phẳng thân khối
+          // push out slightly so stickers do not z-fight with the body faces
           const out = 0.02;
           return (
             <div
@@ -316,8 +316,8 @@ export default function Cube3D({
                 opacity: dim ? 0.3 : 1,
                 borderRadius: unit * 0.16,
                 boxShadow: 'inset 0 1px 0 rgba(255,255,255,.22), inset 0 0 0 1px rgba(0,0,0,.35)',
-                // Phép quay của lớp đặt TRƯỚC nên nó tác dụng trong hệ của cả khối,
-                // đúng như một lớp đang xoay quanh trục của nó.
+                // The layer rotation goes FIRST so it acts in the whole cube's
+                // frame, exactly like a layer turning about its own axis.
                 transform: `${inLayer ? layerTransform : ''}translate3d(${(p[0] + n[0] * out) * unit}px, ${-(p[1] + n[1] * out) * unit}px, ${(p[2] + n[2] * out) * unit}px) ${faceRotation(n)}`,
               }}
             />

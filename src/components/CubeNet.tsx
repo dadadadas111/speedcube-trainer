@@ -1,8 +1,8 @@
 /**
- * Vẽ khối rubik dạng trải phẳng.
+ * Draws the cube as a flat net.
  *
- * `viewRotation` cho phép nhìn khối từ hệ quy chiếu của người giải — cần thiết
- * vì hệ quy chiếu của mô hình có thể lệch so với thực tế sau các nước lát cắt.
+ * `viewRotation` lets us view the cube from the solver's frame, which matters
+ * because the model's frame can drift from reality after slice moves.
  */
 
 import { useMemo } from 'react';
@@ -12,15 +12,15 @@ import { FACE_COLORS } from './palette';
 interface Props {
   state: CubeState;
   viewRotation?: Uint8Array | null;
-  /** Facelet cần làm nổi bật; các ô còn lại sẽ bị mờ đi */
+  /** Facelets to highlight; everything else dims */
   highlight?: number[] | null;
   size?: number;
   className?: string;
-  /** Nhãn mặt (U/R/F/D/L/B) ở góc mỗi mặt */
+  /** Face letters (U/R/F/D/L/B) in the corner of each face */
   showFaceLabels?: boolean;
 }
 
-// vị trí mỗi mặt trong lưới 4x3 (cột, hàng)
+// where each face sits in the 4x3 grid (column, row)
 const FACE_GRID: [number, number][] = [
   [1, 0], // U
   [2, 1], // R
@@ -35,7 +35,7 @@ export default function CubeNet({ state, viewRotation, highlight, size = 132, cl
   const shown = useMemo(() => (viewRotation ? applyPerm(state, viewRotation) : state), [state, viewRotation]);
   const hl = useMemo(() => (highlight ? new Set(highlight) : null), [highlight]);
 
-  const cell = size / 12; // 4 mặt ngang * 3 ô
+  const cell = size / 12; // 4 faces across * 3 stickers
   const gap = Math.max(1, cell * 0.08);
   const w = cell * 12;
   const h = cell * 9;
@@ -47,7 +47,7 @@ export default function CubeNet({ state, viewRotation, highlight, size = 132, cl
       height={(size * 9) / 12}
       className={className}
       role="img"
-      aria-label="Trạng thái khối rubik"
+      aria-label="Cube state"
     >
       {FACE_GRID.map(([gx, gy], face) => (
         <g key={face} transform={`translate(${gx * cell * 3} ${gy * cell * 3})`}>

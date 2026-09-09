@@ -1,9 +1,10 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
-   Hệ màu lấy thẳng từ sticker của cube: mỗi bước giải mang một màu mặt cube và
-   giữ nguyên màu đó ở mọi nơi (dải thời gian, biểu đồ, nhãn bước, replay).
-   Phần khung nền để trung tính hoàn toàn để màu cube tự nói.
+   The palette comes straight off the cube's stickers: each solve step carries
+   one cube-face colour and keeps it everywhere — the time ribbon, the charts,
+   the step labels, the replay. The surrounding chrome stays neutral so the cube
+   colours do all the talking.
 --------------------------------------------------------------------------- */
 @theme {
   --font-sans: 'Be Vietnam Pro', ui-sans-serif, system-ui, sans-serif;
@@ -67,13 +68,13 @@ body {
   outline-offset: 2px;
 }
 
-/* Số liệu không được nhảy chữ số khi đang chạy */
+/* Figures must not jitter while the timer runs */
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
 }
 
-/* Bề mặt: viền mảnh, bo nhẹ, không đổ bóng — để phẳng như mặt bàn làm việc */
+/* Surfaces: hairline border, slight radius, no shadow — flat like a workbench */
 .panel {
   background: var(--color-ink-850);
   border: 1px solid var(--color-ink-700);
@@ -130,7 +131,7 @@ body {
   display: block;
 }
 
-/* Chỉ dùng cho thời điểm trạng thái thay đổi, không dùng làm trang trí */
+/* Only for moments when state changes, never as decoration */
 @keyframes armed-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }

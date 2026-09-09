@@ -1,13 +1,14 @@
 /**
- * Luyện case ngẫu nhiên trong một hoặc nhiều họ — kiểu trainer subset của csTimer.
+ * Random-case drilling across one or more families — csTimer's subset trainer.
  *
- * App bốc ngẫu nhiên một case trong phạm vi bạn chọn, dẫn bạn vặn khối vào case
- * đó, rồi tính giờ từ lúc khối vào case tới lúc giải xong. Case nào chưa luyện
- * lần nào thì được bốc trúng nhiều hơn, để không bỏ sót.
+ * The app picks a random case from the families you picked, walks you into it,
+ * then times you from the moment the cube enters the case until it is solved.
+ * Cases you have never drilled come up more often, so nothing gets skipped.
  *
- * Một điểm phải nói thẳng: chuỗi setup chính là alg đảo ngược, nên nhìn cả chuỗi
- * là biết luôn case. Vì thế mặc định app chỉ hiện TỪNG NƯỚC MỘT — vặn theo kiểu
- * máy móc thì lúc vặn xong vẫn phải tự nhận dạng. Muốn xem cả chuỗi thì có nút.
+ * One thing worth saying plainly: the setup sequence is just the algorithm
+ * reversed, so seeing the whole thing gives the case away. That is why only ONE
+ * MOVE AT A TIME is shown by default — turning it mechanically still leaves you
+ * to recognise the case at the end. A button reveals the full sequence.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -39,7 +40,7 @@ interface Props {
   onRepSaved: () => void;
 }
 
-/** Bốc case ngẫu nhiên, ưu tiên case chưa luyện và tránh lặp lại case vừa rồi. */
+/** Pick a random case, favouring undrilled ones and avoiding an immediate repeat. */
 function pickCase(pool: AlgEntry[], repCounts: Map<number, number>, avoidId: number | null): AlgEntry | null {
   const candidates = pool.filter((a) => a.id != null && (pool.length === 1 || a.id !== avoidId));
   if (!candidates.length) return null;
@@ -85,7 +86,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
 
   const setup = useMemo(() => {
     if (!moves.length) return [];
-    // Đảo ngược alg là ra case, thêm một nước U ngẫu nhiên để còn phải tự canh AUF
+    // Reversing the algorithm produces the case; a random U adds an AUF to find
     const auf = ['', 'U', "U'", 'U2'][Math.floor(Math.random() * 4)];
     return auf ? [...invertAlg(moves), auf] : invertAlg(moves);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,7 +101,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
     setPhaseBoth(picked ? 'setup' : 'idle');
   }, [pool, repCounts]);
 
-  // Đổi phạm vi thì dừng lại, tránh đang luyện họ này lại nhảy sang họ khác
+  // Changing the scope stops the drill rather than jumping to another family
   useEffect(() => {
     setPhaseBoth('idle');
     setTarget(null);
@@ -108,7 +109,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
     setHistory([]);
   }, [pool]);
 
-  // Dựng lại bộ dẫn mỗi khi có case mới
+  // Rebuild the guide whenever a new case comes up
   useEffect(() => {
     if (!setup.length) return;
     const tracker = new ScrambleTracker(setup);
@@ -178,8 +179,8 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
           startRef.current = t;
           setPhaseBoth('running');
         }
-        // Vẫn chạy bộ so khớp để lấy được thời gian từng nước KHI người dùng
-        // dùng đúng alg đã lưu; dùng alg khác thì chỉ tính tổng thời gian.
+        // Still run the matcher so per-move times are captured WHEN the stored
+        // algorithm is the one used; another algorithm only gets a total.
         const res = matcherRef.current?.feed(state, t);
         if (isSolved(state)) {
           const execMs = Math.max(0, t - startRef.current);
@@ -218,10 +219,10 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
   if (!usingCube) {
     return (
       <section className="panel p-5">
-        <h2 className="text-base font-semibold">Luyện case ngẫu nhiên</h2>
+        <h2 className="text-base font-semibold">Random case drill</h2>
         <p className="mt-2 max-w-[60ch] text-sm text-ink-400">
-          Chế độ này cần smart cube để biết bạn đã vặn vào đúng case chưa và tự bấm giờ. Kết nối cube ở góc
-          trên, hoặc bật khối ảo bàn phím trong Cài đặt để thử.
+          This mode needs a smart cube to know when you have turned into the case and to time you. Connect a cube
+          from the top bar, or switch on the keyboard cube in Settings to try it out.
         </p>
       </section>
     );
@@ -232,19 +233,19 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
       <section className="panel p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold">Luyện case ngẫu nhiên</h2>
+            <h2 className="text-base font-semibold">Random case drill</h2>
             <p className="text-[13px] text-ink-400">
-              {pool.length} case trong phạm vi · đã làm {history.length} lượt
+              {pool.length} cases in scope · {history.length} done
             </p>
           </div>
           <div className="flex gap-2">
             {phase === 'idle' || phase === 'done' ? (
               <button className="btn btn-primary" onClick={nextCase} disabled={!pool.length}>
-                {phase === 'done' ? 'Case tiếp theo' : 'Bắt đầu'}
+                {phase === 'done' ? 'Next case' : 'Start'}
               </button>
             ) : (
               <button className="btn" onClick={nextCase}>
-                Bỏ qua case này
+                Skip this case
               </button>
             )}
             {phase !== 'idle' && (
@@ -256,7 +257,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
                   targetRef.current = null;
                 }}
               >
-                Dừng
+                Stop
               </button>
             )}
           </div>
@@ -264,15 +265,15 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
 
         {phase === 'idle' && (
           <p className="mt-4 max-w-[62ch] text-sm text-ink-300">
-            App sẽ bốc ngẫu nhiên một case trong phạm vi, dẫn bạn vặn khối vào case đó, rồi tính giờ từ lúc
-            khối vào case tới lúc giải xong. Case chưa luyện lần nào được bốc trúng nhiều hơn.
+            The app picks a random case from the scope, walks you into it, then times you from the moment the cube
+            enters the case until it is solved. Cases you have never drilled come up more often.
           </p>
         )}
 
         {phase !== 'idle' && target && (
           <div className="mt-5 grid gap-5 md:grid-cols-[190px_minmax(0,1fr)]">
             <div>
-              <p className="mb-1.5 text-[13px] text-ink-400">Khối của bạn</p>
+              <p className="mb-1.5 text-[13px] text-ink-400">Your cube</p>
               <CubeView state={cubeState} size={170} />
             </div>
             <div>
@@ -287,14 +288,14 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
                       />
                     </div>
                     <button className="btn btn-ghost !px-2 !py-0.5 !text-[12px]" onClick={() => setReveal(!reveal)}>
-                      {reveal ? 'Ẩn chuỗi' : 'Hiện cả chuỗi'}
+                      {reveal ? 'Hide sequence' : 'Show full sequence'}
                     </button>
                   </div>
                   {reveal && (
                     <div className="mt-3">
                       <ScrambleGuide moves={setup} progress={progress} />
                       <p className="mt-1 text-[12px] text-ink-500">
-                        Chuỗi này là alg đảo ngược, nhìn cả chuỗi là biết case.
+                        This is the algorithm reversed — seeing it all gives the case away.
                       </p>
                     </div>
                   )}
@@ -303,18 +304,18 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
 
               {phase === 'armed' && (
                 <>
-                  <p className="armed text-lg font-semibold text-good">Đúng case rồi — nhận dạng và giải đi</p>
-                  <p className="mt-1 text-sm text-ink-300">Nước đầu tiên bắt đầu tính giờ.</p>
+                  <p className="armed text-lg font-semibold text-good">In the case — recognise it and go</p>
+                  <p className="mt-1 text-sm text-ink-300">The first move starts the timer.</p>
                 </>
               )}
 
-              {phase === 'running' && <p className="text-lg font-semibold text-cube-blue">Đang chạy…</p>}
+              {phase === 'running' && <p className="text-lg font-semibold text-cube-blue">Running…</p>}
 
               {phase === 'done' && last && (
                 <>
                   <p className="text-lg font-semibold text-good">{formatSeconds(last.execMs)}s</p>
                   <p className="mt-1 text-sm text-ink-300">
-                    Case: <span className="text-ink-100">{last.entry.family} · {last.entry.name}</span> · nhận dạng{' '}
+                    Case: <span className="text-ink-100">{last.entry.family} · {last.entry.name}</span> · recognition{' '}
                     {formatSeconds(last.recognitionMs)}s
                   </p>
                   <p className="mt-1 font-mono text-[15px] text-ink-200">{last.entry.alg}</p>
@@ -328,16 +329,16 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
       {stats.length > 0 && (
         <section className="panel overflow-hidden">
           <header className="flex items-baseline justify-between border-b border-ink-700 px-4 py-3">
-            <h2 className="text-sm font-semibold">Case nào đang chậm nhất</h2>
-            <span className="text-[13px] text-ink-400">trong phiên luyện này</span>
+            <h2 className="text-sm font-semibold">Slowest cases</h2>
+            <span className="text-[13px] text-ink-400">this drill session</span>
           </header>
           <table className="data">
             <thead>
               <tr>
                 <th>Case</th>
-                <th className="text-right">Lượt</th>
-                <th className="text-right">Trung vị</th>
-                <th className="text-right">Nhanh nhất</th>
+                <th className="text-right">Reps</th>
+                <th className="text-right">Median</th>
+                <th className="text-right">Best</th>
               </tr>
             </thead>
             <tbody>

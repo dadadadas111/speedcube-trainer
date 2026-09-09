@@ -16,7 +16,7 @@ import { formatSeconds } from '../analysis/stats';
 
 type Phase = 'setup' | 'armed' | 'running' | 'done';
 
-/** Chỉ nạp thư viện mẫu đúng một lần, kể cả khi effect chạy hai lần ở StrictMode. */
+/** Seed the sample library exactly once, even when StrictMode runs effects twice. */
 let seeding: Promise<void> | null = null;
 function seedOnce(): Promise<void> {
   seeding ??= (async () => {
@@ -42,7 +42,7 @@ export default function DrillPage() {
     const rows = await db.algs.orderBy('createdAt').toArray();
     setAlgs(rows);
     setSelectedId((cur) => (cur != null && rows.some((r) => r.id === cur) ? cur : (rows[0]?.id ?? null)));
-    // đếm số lần đã drill cho từng alg, để thư viện chỉ ra chỗ còn bỏ trống
+    // rep counts per algorithm, so the library can show what has been left alone
     const counts = new Map<number, number>();
     await db.reps.each((r) => counts.set(r.algId, (counts.get(r.algId) ?? 0) + 1));
     setRepCounts(counts);
@@ -71,7 +71,7 @@ export default function DrillPage() {
     return [...seen.values()];
   }, [algs]);
 
-  // Vào chế độ ngẫu nhiên thì mặc định lấy đúng họ của case đang chọn
+  // Entering random mode defaults the scope to the selected case's family
   useEffect(() => {
     if (mode !== 'random' || scope.size > 0 || !selected) return;
     setScope(new Set([familyKey(selected)]));
@@ -113,19 +113,19 @@ export default function DrillPage() {
             className={'btn !py-1 !text-[13px] ' + (mode === 'one' ? '!border-cube-blue !text-cube-blue' : '')}
             onClick={() => setMode('one')}
           >
-            Một case
+            Single case
           </button>
           <button
             className={'btn !py-1 !text-[13px] ' + (mode === 'random' ? '!border-cube-blue !text-cube-blue' : '')}
             onClick={() => setMode('random')}
           >
-            Ngẫu nhiên trong họ
+            Random within family
           </button>
         </div>
 
         {mode === 'random' && (
           <section className="panel p-4">
-            <p className="mb-2 text-[13px] text-ink-400">Chọn phạm vi luyện</p>
+            <p className="mb-2 text-[13px] text-ink-400">Pick what to drill</p>
             <div className="flex flex-wrap gap-1.5">
               {allFamilies.map((f) => {
                 const on = scope.has(f.key);
@@ -182,7 +182,7 @@ export default function DrillPage() {
             onDelete={() => selected.id && void removeAlg(selected.id)}
           />
         ) : (
-          <p className="panel p-6 text-sm text-ink-400">Chọn một alg bên trái, hoặc thêm alg mới.</p>
+          <p className="panel p-6 text-sm text-ink-400">Pick an algorithm on the left, or add a new one.</p>
         ))}
       </div>
     </div>
@@ -223,7 +223,7 @@ function AlgForm({
     keyboard,
   );
 
-  /** Phân loại case của mọi alg đang có, để đối chiếu với alg đang nhập. */
+  /** Classify every stored algorithm, to compare against the one being typed. */
   const known = useMemo(
     () =>
       algs.map((a) => {
@@ -254,7 +254,7 @@ function AlgForm({
     [known, info],
   );
 
-  // Tự điền họ theo alg đã có cùng nhóm, chừng nào người dùng chưa tự gõ
+  // Fill the family from a matching stored algorithm, until it is typed by hand
   useEffect(() => {
     if (familyTouched || !sameFamily.length) return;
     const counts = new Map<string, number>();
@@ -274,7 +274,7 @@ function AlgForm({
     if (!parsed) return;
     await db.algs.add({
       name: name.trim(),
-      group: group.trim() || 'Khác',
+      group: group.trim() || 'Other',
       family: family.trim(),
       alg: formatAlg(parsed),
       createdAt: Date.now(),
@@ -284,11 +284,11 @@ function AlgForm({
 
   return (
     <section className="panel p-5">
-      <h2 className="text-base font-semibold">Thêm alg</h2>
+      <h2 className="text-base font-semibold">Add an algorithm</h2>
 
       <div className="mt-4">
         <label className="field-label" htmlFor="alg-text">
-          Ký hiệu
+          Notation
         </label>
         <input
           id="alg-text"
@@ -299,23 +299,23 @@ function AlgForm({
         />
         {text.trim() !== '' && !parsed && (
           <p className="mt-1.5 text-[13px] text-bad">
-            Có nước không hiểu được. Dùng ký hiệu chuẩn: R U R' U2 M' r ...
+            There is a move here that cannot be read. Use standard notation: R U R' U2 M' r ...
           </p>
         )}
         {info && (
           <div className="mt-2 text-[13px]">
             <p className="text-ink-300">
-              Nhận ra case: <span className="text-ink-100">{describeFamily(info.family)}</span>
-              {!info.preservesBlocks && <span className="ml-2 text-warn">alg này phá hai khối Roux</span>}
+              Case recognised: <span className="text-ink-100">{describeFamily(info.family)}</span>
+              {!info.preservesBlocks && <span className="ml-2 text-warn">this algorithm breaks the Roux blocks</span>}
             </p>
             {sameCase.length > 0 && (
               <p className="mt-1 text-warn">
-                Bạn đã có alg giải đúng case này: {sameCase.map((k) => `${k.entry.family} · ${k.entry.name}`).join(', ')}
+                You already have an algorithm for this case: {sameCase.map((k) => `${k.entry.family} · ${k.entry.name}`).join(', ')}
               </p>
             )}
             {sameCase.length === 0 && sameFamily.length > 0 && (
               <p className="mt-1 text-good">
-                Cùng họ với: {[...new Set(sameFamily.map((k) => k.entry.family))].join(', ')} — đã điền sẵn ô Họ.
+                Same family as: {[...new Set(sameFamily.map((k) => k.entry.family))].join(', ')} — the Family field is filled in.
               </p>
             )}
           </div>
@@ -325,7 +325,7 @@ function AlgForm({
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <div>
           <label className="field-label" htmlFor="alg-group">
-            Mảng
+            Set
           </label>
           <input
             id="alg-group"
@@ -343,7 +343,7 @@ function AlgForm({
         </div>
         <div>
           <label className="field-label" htmlFor="alg-family">
-            Họ
+            Family
           </label>
           <input
             id="alg-family"
@@ -364,24 +364,24 @@ function AlgForm({
         </div>
         <div>
           <label className="field-label" htmlFor="alg-name">
-            Tên case
+            Case name
           </label>
           <input
             id="alg-name"
             className="input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="chéo, trái, phải..."
+            placeholder="diagonal, left, right..."
           />
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button className="btn btn-primary" disabled={!valid} onClick={() => void save()}>
-          Lưu
+          Save
         </button>
         <button className="btn" onClick={onClose}>
-          Huỷ
+          Cancel
         </button>
         {usingCube && (
           <button
@@ -391,10 +391,10 @@ function AlgForm({
               setRecording(!recording);
             }}
           >
-            {recording ? 'Dừng ghi' : 'Ghi từ cube'}
+            {recording ? 'Stop recording' : 'Record from cube'}
           </button>
         )}
-        {recording && <span className="armed text-[13px] text-bad">Đang ghi — cứ thực hiện alg trên cube</span>}
+        {recording && <span className="armed text-[13px] text-bad">Recording — just perform the algorithm on the cube</span>}
       </div>
     </section>
   );
@@ -434,7 +434,7 @@ function AlgDetail({
   );
   const summary = useMemo(() => summarizeDrill(moves, repData), [moves, repData]);
 
-  /* ----- máy trạng thái của một lần drill ----- */
+  /* ----- state machine for one drill rep ----- */
   const [phase, setPhase] = useState<Phase>('setup');
   const [progress, setProgress] = useState(0);
   const [lastRep, setLastRep] = useState<DrillRepData | null>(null);
@@ -515,7 +515,7 @@ function AlgDetail({
             <h2 className="text-xl font-semibold">{alg.name}</h2>
           </div>
           <button className="btn btn-danger !py-1 !text-[13px]" onClick={onDelete}>
-            Xoá alg
+            Delete algorithm
           </button>
         </div>
         {alg.notes && <p className="mt-2 max-w-[60ch] text-[13px] text-ink-400">{alg.notes}</p>}
@@ -524,14 +524,14 @@ function AlgDetail({
 
         <div className="mt-5 grid gap-5 md:grid-cols-[190px_minmax(0,1fr)]">
           <div>
-            <p className="mb-2 text-[13px] text-ink-400">Trạng thái case</p>
+            <p className="mb-2 text-[13px] text-ink-400">The case</p>
             <CubeView state={caseState} size={170} />
           </div>
           <div>
             {!usingCube ? (
               <p className="text-sm text-ink-400">
-                Drill cần smart cube để đo được từng nước. Kết nối cube ở góc trên, hoặc bật khối ảo bàn phím
-                trong Cài đặt để thử.
+                Drilling needs a smart cube to time individual moves. Connect one from the top bar, or switch on
+                the keyboard cube in Settings to try it out.
               </p>
             ) : (
               <DrillStatus
@@ -547,7 +547,7 @@ function AlgDetail({
             )}
             {usingCube && (
               <div className="mt-4">
-                <p className="mb-1.5 text-[13px] text-ink-400">Khối của bạn</p>
+                <p className="mb-1.5 text-[13px] text-ink-400">Your cube</p>
                 <CubeView state={cubeState} size={130} />
               </div>
             )}
@@ -585,28 +585,28 @@ function DrillStatus({
     <div>
       {phase === 'setup' && (
         <>
-          <p className="text-lg font-semibold text-warn">Đưa khối về case</p>
-          <p className="mt-1 text-sm text-ink-300">Từ khối đã giải, thực hiện:</p>
+          <p className="text-lg font-semibold text-warn">Set the cube into the case</p>
+          <p className="mt-1 text-sm text-ink-300">From solved, perform:</p>
           <p className="mt-1.5 font-mono text-[15px] text-ink-100">{setupMoves.join(' ')}</p>
           {keyboard && (
             <button className="btn mt-3 !py-1 !text-[13px]" onClick={onSetupVirtual}>
-              Đặt khối ảo về case
+              Set the virtual cube into the case
             </button>
           )}
         </>
       )}
       {phase === 'armed' && (
         <>
-          <p className="armed text-lg font-semibold text-good">Sẵn sàng — nước đầu tiên bắt đầu tính giờ</p>
+          <p className="armed text-lg font-semibold text-good">Ready — the first move starts the timer</p>
           <p className="mt-1 text-sm text-ink-300">
-            Thời gian từ giờ đến nước đầu tiên được tính là thời gian nhận dạng.
+            The time from now until your first move counts as recognition.
           </p>
         </>
       )}
       {phase === 'running' && (
         <>
           <p className="text-lg font-semibold text-cube-blue">
-            Đang chạy — nước {progress}/{total}
+            Running — move {progress}/{total}
           </p>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-ink-800">
             <div className="h-full bg-cube-blue transition-[width]" style={{ width: `${(progress / total) * 100}%` }} />
@@ -616,20 +616,20 @@ function DrillStatus({
       {phase === 'done' && lastRep && (
         <>
           <p className="text-lg font-semibold text-good">
-            Xong — {formatSeconds(lastRep.execMs)}s
+            Done — {formatSeconds(lastRep.execMs)}s
             {isFinite(summary.bestExecMs) && lastRep.execMs <= summary.bestExecMs && (
-              <span className="ml-2 text-warn">kỷ lục mới</span>
+              <span className="ml-2 text-warn">personal best</span>
             )}
           </p>
           <p className="mt-1 text-sm text-ink-300">
-            Nhận dạng {formatSeconds(lastRep.recognitionMs)}s · {(total / (lastRep.execMs / 1000)).toFixed(1)} TPS
-            {lastRep.extraMoves > 0 && <span className="text-bad"> · {lastRep.extraMoves} lỗi</span>}
+            Recognition {formatSeconds(lastRep.recognitionMs)}s · {(total / (lastRep.execMs / 1000)).toFixed(1)} TPS
+            {lastRep.extraMoves > 0 && <span className="text-bad"> · {lastRep.extraMoves} wrong moves</span>}
           </p>
-          <p className="mt-2 text-sm text-ink-400">Đưa khối về case để làm lần tiếp theo.</p>
+          <p className="mt-2 text-sm text-ink-400">Set the cube back into the case for the next rep.</p>
           <p className="mt-1 font-mono text-[15px] text-ink-200">{setupMoves.join(' ')}</p>
           {keyboard && (
             <button className="btn mt-3 !py-1 !text-[13px]" onClick={onSetupVirtual}>
-              Đặt khối ảo về case
+              Set the virtual cube into the case
             </button>
           )}
         </>
@@ -638,7 +638,7 @@ function DrillStatus({
   );
 }
 
-/** Alg viết ra, mỗi nước tô màu theo mức hay khựng ở đó. */
+/** The algorithm written out, each move coloured by how much you hesitate there. */
 function AlgLine({ moves, stats, progress }: { moves: string[]; stats: MoveStat[]; progress: number }) {
   return (
     <div className="mt-4 flex flex-wrap gap-1.5">
@@ -651,7 +651,7 @@ function AlgLine({ moves, stats, progress }: { moves: string[]; stats: MoveStat[
         return (
           <span
             key={i}
-            title={s?.samples ? `${Math.round(s.medianMs)}ms · ${s.samples} lần` : 'chưa có dữ liệu'}
+            title={s?.samples ? `${Math.round(s.medianMs)}ms · ${s.samples} reps` : 'no data yet'}
             className="flex flex-col items-center gap-1 rounded-[4px] border px-2 py-1 font-mono text-[15px] transition-colors"
             style={{
               borderColor: current ? '#2f7ff2' : 'var(--color-ink-700)',
@@ -676,15 +676,15 @@ function DrillStats({ summary }: { summary: ReturnType<typeof summarizeDrill> })
   );
   return (
     <section className="panel p-5">
-      <h2 className="text-base font-semibold">Bạn khựng ở đâu</h2>
+      <h2 className="text-base font-semibold">Where you hesitate</h2>
       <p className="mt-1 max-w-[70ch] text-[13px] text-ink-400">
-        Mỗi cột là khoảng thời gian từ nước trước sang nước đó, lấy trung vị qua {summary.reps} lần.
-        Cột đỏ là chỗ tay bạn dừng lại nghĩ — thường là chỗ phải đổi cách cầm.
+        Each bar is the time from the previous move to that one, taken as a median over {summary.reps} reps.
+        A red bar is where your hands stop to think — usually where a regrip is needed.
       </p>
 
       <div className="mt-5 flex items-end gap-1 overflow-x-auto pb-1">
-        {/* Nước đầu không có "khoảng cách từ nước trước", nên chỗ đó hiện thời
-            gian nhận dạng: từ lúc khối vào case đến khi bạn động tay. */}
+        {/* The first move has no "gap from the previous move", so that slot shows
+            recognition instead: from entering the case until your hands move. */}
         <div className="flex min-w-[54px] flex-col items-center gap-1 border-r border-ink-700 pr-2">
           <span className="tnum font-mono text-[11px] text-ink-400">
             {isNaN(summary.medianRecognitionMs) ? '—' : Math.round(summary.medianRecognitionMs)}
@@ -695,7 +695,7 @@ function DrillStats({ summary }: { summary: ReturnType<typeof summarizeDrill> })
               style={{ height: `${Math.min(130, (summary.medianRecognitionMs / max) * 130 || 0)}px`, opacity: 0.7 }}
             />
           </div>
-          <span className="text-[12px] text-ink-400">nhận dạng</span>
+          <span className="text-[12px] text-ink-400">recognition</span>
         </div>
         {summary.moveStats.slice(1).map((s) => {
           const h = s.samples ? (s.medianMs / max) * 130 : 0;
@@ -713,18 +713,18 @@ function DrillStats({ summary }: { summary: ReturnType<typeof summarizeDrill> })
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3 border-t border-ink-700 pt-4 sm:grid-cols-5">
-        <Metric label="Số lần" value={String(summary.reps)} />
-        <Metric label="Nhanh nhất" value={`${formatSeconds(summary.bestExecMs)}s`} />
-        <Metric label="Trung vị" value={`${formatSeconds(summary.medianExecMs)}s`} />
-        <Metric label="5 lần gần nhất" value={`${formatSeconds(summary.recentExecMs)}s`} />
+        <Metric label="Reps" value={String(summary.reps)} />
+        <Metric label="Best" value={`${formatSeconds(summary.bestExecMs)}s`} />
+        <Metric label="Median" value={`${formatSeconds(summary.medianExecMs)}s`} />
+        <Metric label="Last 5" value={`${formatSeconds(summary.recentExecMs)}s`} />
         <Metric label="TPS" value={summary.tps.toFixed(1)} />
       </div>
 
       {summary.worstMoves.length > 0 && (
         <p className="mt-4 max-w-[70ch] text-sm text-warn">
-          Chỗ nên tách ra tập riêng:{' '}
-          {summary.worstMoves.map((w) => `nước ${w.index + 1} (${w.move}, ${Math.round(w.medianMs)}ms)`).join(', ')}.
-          Tập chậm đúng đoạn đó vài chục lần cho tay quen, rồi mới ghép lại cả alg.
+          Worth drilling on its own:{' '}
+          {summary.worstMoves.map((w) => `move ${w.index + 1} (${w.move}, ${Math.round(w.medianMs)}ms)`).join(', ')}.
+          Run that fragment slowly a few dozen times until it is in the hands, then put the algorithm back together.
         </p>
       )}
     </section>

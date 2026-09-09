@@ -1,12 +1,12 @@
 /**
- * Hình học của khối 3x3 và sinh bảng hoán vị cho từng nước.
+ * Geometry of the 3x3 cube, and generation of the permutation table per move.
  *
- * Mọi phép quay đều được sinh ra từ một mô hình toạ độ 3D duy nhất, nên không có
- * bảng nào phải gõ tay -> không có lỗi chép nhầm. Trục: x = phải, y = lên, z = trước.
+ * Every turn is derived from a single 3D coordinate model, so no table is typed
+ * by hand -> no transcription bugs. Axes: x = right, y = up, z = front.
  *
- * 54 facelet được đánh số theo chuẩn Kociemba: U(0-8) R(9-17) F(18-26) D(27-35)
- * L(36-44) B(45-53), mỗi mặt đọc theo hàng. Đây đúng là format mà smart cube GAN
- * trả về nên có thể so sánh trực tiếp.
+ * The 54 facelets are indexed in Kociemba order: U(0-8) R(9-17) F(18-26)
+ * D(27-35) L(36-44) B(45-53), each face read row by row. That is exactly the
+ * format GAN smart cubes report, so states can be compared directly.
  */
 
 export type Vec3 = readonly [number, number, number];
@@ -14,7 +14,7 @@ export type Vec3 = readonly [number, number, number];
 export const FACE_ORDER = ['U', 'R', 'F', 'D', 'L', 'B'] as const;
 export type FaceName = (typeof FACE_ORDER)[number];
 
-/** normal = hướng pháp tuyến, row = hướng tăng của chỉ số hàng, col = hướng tăng của cột */
+/** normal = outward normal, row = direction of increasing row, col = of increasing column */
 const FACE_GEOMETRY: Record<FaceName, { n: Vec3; row: Vec3; col: Vec3 }> = {
   U: { n: [0, 1, 0], row: [0, 0, 1], col: [1, 0, 0] },
   R: { n: [1, 0, 0], row: [0, -1, 0], col: [0, 0, -1] },
@@ -46,7 +46,7 @@ for (const face of FACE_ORDER) {
   }
 }
 
-/** Quay vector quanh trục (0=x,1=y,2=z) theo quy tắc bàn tay phải, quarters lần 90 độ. */
+/** Rotate a vector about an axis (0=x,1=y,2=z), right-hand rule, `quarters` times 90 degrees. */
 function rotateVec(v: Vec3, axis: number, quarters: number): Vec3 {
   let [x, y, z] = v;
   let q = ((quarters % 4) + 4) % 4;
@@ -58,14 +58,14 @@ function rotateVec(v: Vec3, axis: number, quarters: number): Vec3 {
   return [x, y, z];
 }
 
-/** Cubie (khối con) chứa facelet i: làm tròn 1.5 -> 1 */
+/** The cubie holding facelet i: round 1.5 -> 1 */
 export function cubieOf(i: number): Vec3 {
   const p = FACELET_POS[i];
   const clamp = (v: number) => Math.max(-1, Math.min(1, Math.round(v)));
   return [clamp(p[0]), clamp(p[1]), clamp(p[2])] as Vec3;
 }
 
-/** Tất cả facelet thuộc một cubie ở vị trí cho trước. */
+/** All facelets belonging to the cubie at a given position. */
 export function faceletsOfCubie(pos: Vec3): number[] {
   const out: number[] = [];
   for (let i = 0; i < 54; i++) {
@@ -78,9 +78,9 @@ export function faceletsOfCubie(pos: Vec3): number[] {
 type LayerDef = { axis: 0 | 1 | 2; quarters: number; min: number; max: number };
 
 /**
- * Định nghĩa mọi nước quay cơ bản. `quarters` theo bàn tay phải; nước mặt "thuận
- * chiều kim đồng hồ nhìn từ ngoài" ứng với -1 quanh pháp tuyến của mặt đó.
- * Các lát cắt đi theo hướng của mặt cùng phía: M theo L, E theo D, S theo F.
+ * Every base turn. `quarters` follows the right-hand rule; a face turn that is
+ * "clockwise seen from outside" is -1 about that face's normal.
+ * Slices follow the face on their side: M follows L, E follows D, S follows F.
  */
 const BASE_MOVES: Record<string, LayerDef> = {
   U: { axis: 1, quarters: -1, min: 0.5, max: 2 },
@@ -108,15 +108,15 @@ export const BASE_MOVE_NAMES = Object.keys(BASE_MOVES);
 export interface MoveTurn {
   /** 0 = x, 1 = y, 2 = z */
   axis: 0 | 1 | 2;
-  /** Số phần tư vòng theo quy tắc bàn tay phải trong hệ toạ độ mô hình */
+  /** Quarter turns, right-hand rule, in model coordinates */
   quarters: number;
-  /** Facelet này có nằm trong lớp đang quay không */
+  /** Whether this facelet sits in the turning layer */
   inLayer: (facelet: number) => boolean;
 }
 
 /**
- * Mô tả hình học của một nước, để vẽ hoạt hình lớp đang quay.
- * Trả về null nếu không hiểu nước đó.
+ * Geometry of a move, used to animate the turning layer.
+ * Returns null for an unrecognised move.
  */
 export function moveTurn(move: string): MoveTurn | null {
   const suffix = move.endsWith('2') ? 2 : move.endsWith("'") ? -1 : 1;
@@ -133,7 +133,7 @@ export function moveTurn(move: string): MoveTurn | null {
   };
 }
 
-/** Quay một vector quanh trục theo góc bất kỳ (độ), dùng cho hoạt hình dở dang. */
+/** Rotate a vector about an axis by an arbitrary angle (degrees), for partial turns. */
 export function rotateVecDegrees(v: Vec3, axis: number, degrees: number): Vec3 {
   const r = (degrees * Math.PI) / 180;
   const c = Math.cos(r);
@@ -153,13 +153,13 @@ function buildPerm(def: LayerDef, quarters: number): Uint8Array {
     const p2 = inLayer ? rotateVec(p, def.axis, quarters) : p;
     const n2 = inLayer ? rotateVec(n, def.axis, quarters) : n;
     const j = indexByKey.get(keyOf(p2, n2));
-    if (j === undefined) throw new Error(`Không tìm được facelet đích cho ${i}`);
-    perm[j] = i; // sticker đi từ i -> j
+    if (j === undefined) throw new Error(`No destination facelet found for ${i}`);
+    perm[j] = i; // the sticker travels from i to j
   }
   return perm;
 }
 
-/** Bảng tra: tên nước -> hoán vị. out[j] = state[perm[j]] */
+/** Lookup: move name -> permutation. out[j] = state[perm[j]] */
 export const MOVE_PERMS: Record<string, Uint8Array> = {};
 for (const [name, def] of Object.entries(BASE_MOVES)) {
   MOVE_PERMS[name] = buildPerm(def, def.quarters);
@@ -173,14 +173,14 @@ export const IDENTITY_PERM = (() => {
   return p;
 })();
 
-/** Ghép hai hoán vị: kết quả = áp dụng a rồi b. */
+/** Compose two permutations: the result applies a, then b. */
 export function composePerm(a: Uint8Array, b: Uint8Array): Uint8Array {
   const out = new Uint8Array(54);
   for (let j = 0; j < 54; j++) out[j] = a[b[j]];
   return out;
 }
 
-/** 24 phép quay toàn khối, sinh bằng BFS từ x và y. */
+/** The 24 whole-cube rotations, generated by BFS from x and y. */
 export const ROTATIONS: Uint8Array[] = (() => {
   const seen = new Map<string, Uint8Array>();
   const queue: Uint8Array[] = [IDENTITY_PERM];

@@ -1,7 +1,7 @@
 /**
- * Bộ gợi ý cải thiện: so tỷ trọng thời gian từng bước với hồ sơ tham chiếu,
- * rồi tách nguyên nhân thành nhận dạng/nhìn trước (dừng nhiều) hay
- * thực thi (TPS thấp) hay hiệu quả (nhiều nước).
+ * Improvement advice: compare each step's share of the solve against a
+ * reference profile, then separate the cause into recognition/lookahead (lots of
+ * pausing), execution (low TPS), or efficiency (too many moves).
  */
 
 import type { SolveAnalysis } from './solve';
@@ -9,15 +9,15 @@ import type { MethodName } from './method';
 import { meanOf, stdevOf } from './stats';
 
 export interface StepProfile {
-  /** Tỷ trọng thời gian mong đợi trong tổng solve */
+  /** Expected share of the total solve time */
   share: number;
-  /** Số nước trung bình mong đợi (STM) */
+  /** Expected average move count (STM) */
   moves: number;
-  /** Tỷ lệ dừng chấp nhận được */
+  /** Acceptable fraction of the step spent paused */
   pauseRatio: number;
 }
 
-/** Hồ sơ tham chiếu cho người giải trình độ trung cấp (~20–30s). */
+/** Reference profile for an intermediate solver (~20-30s). */
 export const REFERENCE: Record<MethodName, Record<string, StepProfile>> = {
   roux: {
     FB: { share: 0.2, moves: 8, pauseRatio: 0.25 },
@@ -51,7 +51,7 @@ export interface StepAggregate {
   tps: number;
   pauseRatio: number;
   refPauseRatio: number;
-  /** Số giây mất thêm mỗi solve so với hồ sơ tham chiếu */
+  /** Seconds lost per solve against the reference profile */
   excessMs: number;
   samples: number;
 }
@@ -62,7 +62,7 @@ export interface Insight {
   title: string;
   detail: string;
   action: string;
-  /** Giá trị dùng để xếp hạng (giây mất thêm) */
+  /** Ranking weight (seconds lost) */
   weight: number;
 }
 
@@ -121,31 +121,31 @@ export function buildInsights(analyses: SolveAnalysis[]): Insight[] {
     const excessSec = overShare * totalMean;
 
     if (overShare > 0.04) {
-      // Chẩn đoán nguyên nhân
+      // Work out the cause
       const pauseHeavy = s.pauseRatio > s.refPauseRatio + 0.08;
       const moveHeavy = s.meanMoves > s.refMoves * 1.25;
       const slowHands = s.tps < 3.2 && !pauseHeavy;
       let detail: string;
       let action: string;
       if (pauseHeavy) {
-        detail = `Chiếm ${pct(s.share)} thời gian solve (tham chiếu ${pct(s.refShare)}). ${pct(s.pauseRatio)} thời gian của bước này là đứng yên nhìn khối — nghẽn ở khâu nhận dạng / nhìn trước chứ không phải tốc độ tay.`;
+        detail = `Takes ${pct(s.share)} of the solve (reference ${pct(s.refShare)}). ${pct(s.pauseRatio)} of this step is spent standing still looking at the cube — the bottleneck is recognition and lookahead, not hand speed.`;
         action = s.key === 'CMLL' || s.key === 'OLL' || s.key === 'PLL'
-          ? 'Vào mục Drill, luyện riêng các alg của bước này. Mục tiêu: nhận ra case dưới 0.5s.'
-          : 'Tập solve chậm (slow solve): giải với 40% tốc độ nhưng KHÔNG được dừng. Ép mắt phải nhìn trước.';
+          ? 'Go to Drill and practise this step\'s algs on their own. Target: recognise the case in under 0.5s.'
+          : 'Do slow solves: turn at 40% speed but NEVER pause. That forces your eyes to look ahead.';
       } else if (moveHeavy) {
-        detail = `Chiếm ${pct(s.share)} thời gian và tốn trung bình ${s.meanMoves.toFixed(1)} nước (tham chiếu ~${s.refMoves}). Tay bạn không chậm, nhưng lời giải đang vòng vo.`;
-        action = 'Xem lại replay các solve chậm, thử tìm lời giải ngắn hơn cho cùng tình huống. Tập tìm nhiều phương án trong lúc inspection.';
+        detail = `Takes ${pct(s.share)} of the solve and averages ${s.meanMoves.toFixed(1)} moves (reference ~${s.refMoves}). Your hands are not slow — the solutions are roundabout.`;
+        action = 'Replay your slow solves and look for a shorter solution to the same situation. Practise finding several options during inspection.';
       } else if (slowHands) {
-        detail = `Chiếm ${pct(s.share)} thời gian, TPS chỉ ${s.tps.toFixed(1)} mà lại ít dừng — vấn đề nằm ở tốc độ thực thi/finger trick.`;
-        action = 'Luyện drill từng alg với mục tiêu TPS, chú ý regrip. Nếu là khối thì tập các cặp nước R U / M U cho mượt.';
+        detail = `Takes ${pct(s.share)} of the solve at only ${s.tps.toFixed(1)} TPS with few pauses — the limit here is execution speed and finger tricks.`;
+        action = 'Drill the algs against a TPS target and watch your regrips. For block building, smooth out the R U and M U pairs.';
       } else {
-        detail = `Chiếm ${pct(s.share)} thời gian solve, cao hơn tham chiếu ${pct(s.refShare)}.`;
-        action = 'Tách riêng bước này ra luyện: bấm giờ chỉ riêng bước này trên 20 lần.';
+        detail = `Takes ${pct(s.share)} of the solve, above the reference ${pct(s.refShare)}.`;
+        action = 'Practise this step in isolation: time just this step for 20 or more reps.';
       }
       insights.push({
         severity: overShare > 0.09 ? 'high' : 'medium',
         step: s.label,
-        title: `${s.label} đang là nút thắt lớn nhất (mất thêm ~${secs(excessSec)}/solve)`,
+        title: `${s.label} is your biggest bottleneck (about ${secs(excessSec)} lost per solve)`,
         detail,
         action,
         weight: excessSec,
@@ -154,7 +154,7 @@ export function buildInsights(analyses: SolveAnalysis[]): Insight[] {
 
   }
 
-  // Chỉ nêu MỘT bước thiếu ổn định — cái nặng nhất. Nêu cả bốn thì thành nhiễu.
+  // Report only ONE unstable step, the worst. Listing all four is just noise.
   const unstable = steps
     .filter((s) => s.samples >= 8 && s.stdevMs > s.meanMs * 0.55 && s.meanMs > 1500)
     .sort((a, b) => b.stdevMs - a.stdevMs)[0];
@@ -162,31 +162,31 @@ export function buildInsights(analyses: SolveAnalysis[]): Insight[] {
     insights.push({
       severity: 'medium',
       step: unstable.label,
-      title: `${unstable.label} là bước thiếu ổn định nhất`,
-      detail: `Trung bình ${secs(unstable.meanMs)} nhưng độ lệch chuẩn tới ${secs(unstable.stdevMs)}. Nghĩa là bạn có vài case xử lý rất gọn và vài case bị khựng hẳn — vấn đề nằm ở case cụ thể chứ không phải cả bước.`,
-      action: 'Vào danh sách solve, sắp theo thời gian rồi mở replay vài lần chậm nhất để tìm đúng case đang giết bạn.',
+      title: `${unstable.label} is your least consistent step`,
+      detail: `Averages ${secs(unstable.meanMs)} with a standard deviation of ${secs(unstable.stdevMs)}. Some cases you handle cleanly and others stop you dead — the problem is specific cases, not the step as a whole.`,
+      action: 'Open the solve list, sort by time, and replay your slowest few to find the case that keeps costing you.',
       weight: unstable.stdevMs * 0.5,
     });
   }
 
-  // Nhận xét toàn cục
+  // Whole-solve observations
   const meanPauseRatio = meanOf(analyses.map((a) => a.pauseRatio));
   if (meanPauseRatio > 0.35) {
     insights.push({
       severity: 'high',
-      step: 'Toàn bài',
-      title: `${pct(meanPauseRatio)} thời gian solve là đứng yên`,
-      detail: `Trung bình mỗi solve bạn dừng tay ${secs(meanPauseRatio * totalMean)}. Người giải cùng tốc độ thường chỉ dừng khoảng 20–30%.`,
-      action: 'Ưu tiên số một: tập nhìn trước. Slow solve có kiểm soát hiệu quả hơn nhiều so với cố quay nhanh hơn.',
+      step: 'Whole solve',
+      title: `${pct(meanPauseRatio)} of every solve is spent standing still`,
+      detail: `You pause for ${secs(meanPauseRatio * totalMean)} in an average solve. Solvers at your speed usually pause around 20-30% of the time.`,
+      action: 'Top priority: train lookahead. Controlled slow solves beat trying to turn faster.',
       weight: (meanPauseRatio - 0.28) * totalMean,
     });
   } else if (meanPauseRatio < 0.22) {
     insights.push({
       severity: 'good',
-      step: 'Toàn bài',
-      title: 'Nhìn trước tốt',
-      detail: `Chỉ ${pct(meanPauseRatio)} thời gian là đứng yên — dòng chảy solve của bạn mượt.`,
-      action: 'Giờ có thể đẩy TPS và học thêm alg mà không sợ hỏng nhịp.',
+      step: 'Whole solve',
+      title: 'Good lookahead',
+      detail: `Only ${pct(meanPauseRatio)} of the time is spent still — your solves flow well.`,
+      action: 'You can now push TPS and learn more algs without breaking your rhythm.',
       weight: 0,
     });
   }
@@ -195,10 +195,10 @@ export function buildInsights(analyses: SolveAnalysis[]): Insight[] {
   if (meanTps < 3 && meanPauseRatio < 0.3) {
     insights.push({
       severity: 'medium',
-      step: 'Toàn bài',
-      title: `TPS trung bình chỉ ${meanTps.toFixed(1)}`,
-      detail: 'Bạn ít dừng nhưng tay chậm — giới hạn hiện tại là tốc độ thực thi.',
-      action: 'Luyện drill alg theo mục tiêu TPS, và xem lại cách cầm/regrip trong replay.',
+      step: 'Whole solve',
+      title: `Average TPS is only ${meanTps.toFixed(1)}`,
+      detail: 'You rarely pause but your hands are slow — execution speed is the current ceiling.',
+      action: 'Drill algs against a TPS target, and study your grips and regrips in the replay.',
       weight: 500,
     });
   }
@@ -208,10 +208,10 @@ export function buildInsights(analyses: SolveAnalysis[]): Insight[] {
   if (meanMoves > moveBudget * 1.2) {
     insights.push({
       severity: 'medium',
-      step: 'Toàn bài',
-      title: `Trung bình ${meanMoves.toFixed(0)} nước/solve — hơi nhiều`,
-      detail: `Người giải ${analyses[0].method === 'roux' ? 'Roux' : 'CFOP'} thường quanh ${moveBudget} nước. Mỗi nước thừa là ~0.2–0.3s.`,
-      action: 'Tập trung vào hiệu quả lời giải hơn là tốc độ: giải chậm và cố tìm phương án ngắn hơn.',
+      step: 'Whole solve',
+      title: `${meanMoves.toFixed(0)} moves per solve on average — rather many`,
+      detail: `${analyses[0].method === 'roux' ? 'Roux' : 'CFOP'} solvers usually land around ${moveBudget} moves. Every extra move costs roughly 0.2-0.3s.`,
+      action: 'Work on efficiency rather than speed: solve slowly and hunt for the shorter solution.',
       weight: (meanMoves - moveBudget) * 250,
     });
   }

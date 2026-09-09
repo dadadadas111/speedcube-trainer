@@ -35,8 +35,8 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
     });
   }, [solveId]);
 
-  // Mốc so sánh lấy từ lịch sử của chính người dùng. Giới hạn 150 solve gần nhất
-  // cho vừa phải, và cũng để phản ánh phong độ hiện tại chứ không phải hồi mới tập.
+  // The baseline comes from the solver's own history. Capping it at the last 150
+  // solves keeps it quick and reflects current form rather than early days.
   useEffect(() => {
     void db.solves.orderBy('date').reverse().limit(150).toArray().then(setCorpus);
   }, []);
@@ -46,14 +46,14 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
   const review = useMemo(() => (analysis ? reviewSolve(analysis, baseline) : null), [analysis, baseline]);
   const scramble = useMemo(() => (solve ? parseAlg(solve.scramble) : []), [solve]);
 
-  /** Ranh giới bước theo chỉ số nước, để biết đang ở bước nào */
+  /** Step boundaries by move index, so the current step is known */
   const boundaries = useMemo(() => analysis?.steps.map((s) => s.endIndex) ?? [], [analysis]);
   const currentStep = useMemo(() => {
     if (!analysis) return null;
     return analysis.steps.find((s) => index > s.startIndex && index <= s.endIndex) ?? analysis.steps[0] ?? null;
   }, [analysis, index]);
 
-  /** Hướng nhìn: theo bước gần nhất đã hoàn thành, để khối không nhảy lung tung */
+  /** View angle: follows the most recently completed step so the cube stays put */
   const viewRotation = useMemo(() => {
     if (!analysis) return null;
     let rot: Uint8Array | null = null;
@@ -65,13 +65,13 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
 
   const total = analysis?.moves.length ?? 0;
 
-  /** Nhìn thấy lớp quay thì dễ theo dõi hơn nhiều so với ảnh nhảy cóc. */
+  /** Seeing the layer turn is far easier to follow than jumping between frames. */
   const animMs = useCallback(
     (moveIndex: number) => {
       if (!analysis) return 120;
       const prevT = moveIndex === 0 ? 0 : analysis.moves[moveIndex - 1].t;
       const gap = (analysis.moves[moveIndex]?.t ?? prevT + 200) - prevT;
-      // Bám theo nhịp thật nhưng luôn đủ dài để mắt kịp thấy, và không lê thê
+      // Tracks the real cadence but stays long enough to see and short enough not to drag
       return Math.min(320, Math.max(90, (gap / speed) * 0.75));
     },
     [analysis, speed],
@@ -83,7 +83,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
     setAnim(null);
   }, []);
 
-  /** Nhảy tới một vị trí; đi đúng một nước tiến thì vẽ hoạt hình lớp quay. */
+  /** Seek to a position; a single step forward animates the turning layer. */
   const seek = useCallback(
     (target: number, animated = false) => {
       stopAnim();
@@ -105,8 +105,8 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
           animRef.current = 0;
           setAnim(null);
           setIndex(clamped);
-          // Chỉ dừng khi vừa ĐI TỚI một biên bước. Để việc này ở effect riêng thì
-          // nó dừng ngay cả khi bạn đang đứng sẵn ở biên và mới bấm phát.
+          // Only stop on ARRIVING at a step boundary. In its own effect this
+          // would stop immediately when Play is pressed while already on one.
           if (pauseAtSteps && clamped < total && boundaries.includes(clamped)) setPlaying(false);
         }
       };
@@ -115,7 +115,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
     [analysis, index, total, animMs, stopAnim, pauseAtSteps, boundaries],
   );
 
-  // Phát lại theo đúng nhịp thật của solve, trừ đi phần thời gian dành cho hoạt hình
+  // Replays at the solve's real cadence, minus the time spent animating
   useEffect(() => {
     if (!playing || !analysis) return;
     if (index >= total) {
@@ -133,30 +133,30 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
 
   useEffect(() => () => stopAnim(), [stopAnim]);
 
-  if (!solve) return <p className="text-sm text-ink-400">Đang tải…</p>;
+  if (!solve) return <p className="text-sm text-ink-400">Loading…</p>;
 
   if (!analysis) {
     return (
       <div className="panel p-6">
         <button className="btn btn-ghost mb-4" onClick={onBack}>
-          Quay lại
+          Back
         </button>
         <p className="text-lg">
-          {formatTime(effectiveTime(solve))} — {new Date(solve.date).toLocaleString('vi-VN')}
+          {formatTime(effectiveTime(solve))} — {new Date(solve.date).toLocaleString('en-GB')}
         </p>
         <ScrambleDisplay moves={parseAlg(solve.scramble)} size="md" className="mt-2" />
         <p className="mt-4 text-sm text-ink-400">
-          Solve này bấm giờ bằng tay nên không có dữ liệu từng nước để xem lại.
+          This solve was timed by hand, so there is no move data to replay.
         </p>
       </div>
     );
   }
 
   const state = analysis.states[index];
-  // Tô sáng theo MÀU của miếng, trên trạng thái đã quay về hệ hiển thị — nhờ vậy
-  // thấy đúng những miếng của bước đó dù chúng còn đang nằm rải rác trên khối.
+  // Highlight by piece COLOUR, on the state rotated into the display frame — so
+  // the step's own pieces light up even while still scattered around the cube.
   const viewed = viewRotation ? applyPerm(state, viewRotation) : state;
-  const highlight = currentStep ? stepHighlight(currentStep.key, viewed) : null;
+  const highlight = currentStep ? stepHighlight(currentStep.key, viewed, analysis.colors) : null;
   const v = verdict(analysis);
   const elapsed = index === 0 ? 0 : analysis.moves[index - 1].t;
 
@@ -173,16 +173,16 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         <div className="flex items-baseline gap-4">
           <button className="btn btn-ghost" onClick={onBack}>
-            Quay lại
+            Back
           </button>
           <span className="tnum font-mono text-2xl font-semibold">{formatTime(effectiveTime(solve))}</span>
-          <span className="text-[13px] text-ink-400">{new Date(solve.date).toLocaleString('vi-VN')}</span>
+          <span className="text-[13px] text-ink-400">{new Date(solve.date).toLocaleString('en-GB')}</span>
         </div>
         <ScrambleDisplay moves={scramble} size="md" className="!text-ink-300" />
       </header>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-        {/* Khối + điều khiển phát lại */}
+        {/* Cube and replay controls */}
         <section className="panel p-4">
           <div className="flex justify-center">
             <CubeView
@@ -205,39 +205,39 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
             <button
               className={`btn !px-2 !py-0.5 !text-[12px] ${viewMode === 'net' ? '!border-cube-blue !text-cube-blue' : ''}`}
               onClick={() => setViewMode('net')}
-              title="Trải phẳng — thấy đủ cả 6 mặt cùng lúc"
+              title="Net — all six faces at once"
             >
-              Trải phẳng
+              Net
             </button>
           </div>
           <div className="mt-4 text-center">
             <p className="text-[13px] text-ink-400">
-              {currentStep ? currentStep.label : 'Trước khi giải'} · nước {index}/{total}
+              {currentStep ? currentStep.label : 'Before the solve'} · move {index}/{total}
             </p>
             <p className="tnum mt-0.5 font-mono text-lg">{formatSeconds(elapsed)}s</p>
           </div>
           <div className="mt-4 flex items-center justify-center gap-1.5">
-            <button className="btn !px-2.5" onClick={() => { setPlaying(false); seek(0); }} title="Về đầu">
+            <button className="btn !px-2.5" onClick={() => { setPlaying(false); seek(0); }} title="To the start">
               ⏮
             </button>
             <button
               className="btn !px-2.5"
               onClick={() => { setPlaying(false); seek(index - 1); }}
-              title="Lùi một nước"
+              title="Back one move"
             >
               ◀
             </button>
             <button className="btn btn-primary !px-4" onClick={() => setPlaying(!playing)}>
-              {playing ? 'Dừng' : index >= total ? 'Phát lại' : 'Phát'}
+              {playing ? 'Pause' : index >= total ? 'Replay' : 'Play'}
             </button>
             <button
               className="btn !px-2.5"
               onClick={() => { setPlaying(false); seek(index + 1, true); }}
-              title="Tới một nước"
+              title="Forward one move"
             >
               ▶
             </button>
-            <button className="btn !px-2.5" onClick={() => { setPlaying(false); seek(total); }} title="Về cuối">
+            <button className="btn !px-2.5" onClick={() => { setPlaying(false); seek(total); }} title="To the end">
               ⏭
             </button>
           </div>
@@ -256,7 +256,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
           </div>
           <label className="mt-3 flex cursor-pointer items-center gap-2 text-[13px] text-ink-300">
             <input type="checkbox" checked={pauseAtSteps} onChange={(e) => setPauseAtSteps(e.target.checked)} />
-            Tự dừng ở cuối mỗi bước
+            Stop at the end of each step
           </label>
         </section>
 
@@ -286,13 +286,13 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
             />
           )}
 
-          {/* Từng nước một, độ rộng tỉ lệ với thời gian thật */}
+          {/* Move by move, width proportional to the real time taken */}
           <section className="panel p-4">
             <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-              <h2 className="shrink-0 text-sm font-semibold">Từng nước</h2>
+              <h2 className="shrink-0 text-sm font-semibold">Move by move</h2>
               <span className="flex flex-wrap items-center gap-3 text-[12px] text-ink-400">
-                <span>Vệt dưới mỗi nước dài theo thời gian, màu theo nhanh/chậm so với chính bạn</span>
-                {(['rất nhanh', 'bình thường', 'chậm', 'đứng hình'] as const).map((v) => (
+                <span>The bar under each move scales with time; colour is fast or slow against your own pace</span>
+                {(['very fast', 'normal', 'slow', 'stuck'] as const).map((v) => (
                   <span key={v} className="flex items-center gap-1">
                     <span className="inline-block h-[3px] w-3 rounded-[1px]" style={{ background: VERDICT_COLORS[v] }} />
                     {v}
@@ -315,12 +315,12 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
             <table className="data">
               <thead>
                 <tr>
-                  <th>Bước</th>
-                  <th className="text-right">Thời gian</th>
+                  <th>Step</th>
+                  <th className="text-right">Time</th>
                   <th className="text-right">%</th>
-                  <th className="text-right">Nước</th>
+                  <th className="text-right">Moves</th>
                   <th className="text-right">TPS</th>
-                  <th className="text-right">Dừng</th>
+                  <th className="text-right">Pauses</th>
                 </tr>
               </thead>
               <tbody>
@@ -329,7 +329,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
                     <td>
                       <span className="mr-2 inline-block size-2 rounded-[2px]" style={{ background: stepColor(s.key) }} />
                       {s.label}
-                      {!s.detected && <span className="ml-2 text-[12px] text-ink-500">không nhận ra</span>}
+                      {!s.detected && <span className="ml-2 text-[12px] text-ink-500">not detected</span>}
                     </td>
                     <td className="tnum text-right font-mono">{formatSeconds(s.durationMs)}</td>
                     <td className="tnum text-right text-ink-400">
@@ -388,14 +388,14 @@ function MoveTape({
             onClick={() => onSeek(i + 1)}
             title={
               rating
-                ? `${m.move} · ${Math.round(d)}ms · ${rating.verdict} (thường ${Math.round(rating.baselineMs)}ms, mốc theo ${rating.basis})`
+                ? `${m.move} · ${Math.round(d)}ms · ${rating.verdict} (usually ${Math.round(rating.baselineMs)}ms, based on ${rating.basis})`
                 : `${m.move} · ${Math.round(d)}ms`
             }
             className="relative flex flex-col items-center rounded-[3px] border px-1.5 py-1 font-mono text-[13px] transition-colors"
             style={{
               borderColor: active ? stepColor(step?.key ?? '') : 'var(--color-ink-700)',
               background: active ? 'color-mix(in srgb, ' + stepColor(step?.key ?? '') + ' 22%, transparent)' : 'transparent',
-              color: rating && rating.verdict !== 'bình thường' ? color : 'var(--color-ink-100)',
+              color: rating && rating.verdict !== 'normal' ? color : 'var(--color-ink-100)',
             }}
           >
             <span>{m.move}</span>
@@ -405,7 +405,7 @@ function MoveTape({
                 width: Math.max(3, (d / maxDelta) * 26) + 'px',
                 height: '3px',
                 background: color,
-                opacity: rating?.verdict === 'bình thường' ? 0.5 : 1,
+                opacity: rating?.verdict === 'normal' ? 0.5 : 1,
               }}
             />
           </button>
@@ -415,7 +415,7 @@ function MoveTape({
   );
 }
 
-/** Bảng đánh giá kiểu xem lại ván cờ, nhưng thang đo là nhanh/chậm. */
+/** A chess-style game review, except the scale is fast versus slow. */
 function MoveReviewPanel({
   review,
   current,
@@ -428,27 +428,27 @@ function MoveReviewPanel({
   return (
     <section className="panel p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold">Đánh giá từng nước</h2>
+        <h2 className="text-sm font-semibold">Move review</h2>
         <span className="text-[13px] text-ink-400">
-          so với tốc độ thường ngày của bạn, dựng từ {review.baselineSolves} solve
+          against your usual pace, built from {review.baselineSolves} solves
         </span>
       </div>
 
       {!review.reliable && (
         <p className="mt-2 text-[13px] text-warn">
-          Còn ít dữ liệu nên mốc so sánh chưa chắc. Giải thêm vài chục lần nữa thì phần này mới đáng tin.
+          Not much data yet, so the baseline is shaky. A few dozen more solves and this becomes trustworthy.
         </p>
       )}
 
       {review.lostMs > 250 ? (
         <p className="mt-3 max-w-[68ch] text-sm text-ink-200">
-          <span className="tnum font-mono text-lg text-bad">{formatSeconds(review.lostMs)}s</span> mất thêm ở{' '}
-          {review.slowest.length} nước chậm bất thường. Nếu những nước đó chạy bằng tốc độ thường ngày của bạn
-          thì solve này còn <span className="tnum font-mono text-good">{formatSeconds(review.potentialMs)}s</span>.
+          <span className="tnum font-mono text-lg text-bad">{formatSeconds(review.lostMs)}s</span> lost across{' '}
+          {review.slowest.length} unusually slow moves. At your usual pace on those moves, this solve would have
+          been <span className="tnum font-mono text-good">{formatSeconds(review.potentialMs)}s</span>.
         </p>
       ) : (
         <p className="mt-3 text-sm text-good">
-          Không có nước nào khựng bất thường — cả bài chạy đều theo đúng nhịp thường ngày của bạn.
+          Nothing stalled out of the ordinary — the whole solve ran at your usual rhythm.
         </p>
       )}
 
@@ -468,7 +468,7 @@ function MoveReviewPanel({
                 <span className="tnum w-16 shrink-0 font-mono text-[13px]" style={{ color: VERDICT_COLORS[r.verdict] }}>
                   {Math.round(r.deltaMs)}ms
                 </span>
-                <span className="tnum shrink-0 text-[12px] text-ink-400">thường {Math.round(r.baselineMs)}ms</span>
+                <span className="tnum shrink-0 text-[12px] text-ink-400">usually {Math.round(r.baselineMs)}ms</span>
                 <span className="hidden min-w-0 flex-1 truncate text-[12px] text-ink-400 sm:block">{r.stepLabel}</span>
                 <span className="shrink-0 text-[12px]" style={{ color: VERDICT_COLORS[r.verdict] }}>
                   {r.verdict}
@@ -481,14 +481,14 @@ function MoveReviewPanel({
 
       {current && (
         <p className="mt-3 border-t border-ink-700 pt-3 text-[13px] text-ink-300">
-          Nước đang xem:{' '}
+          Current move:{' '}
           <span className="font-mono text-ink-100">
             {current.prevMove} → {current.move}
           </span>{' '}
-          mất <span className="tnum font-mono">{Math.round(current.deltaMs)}ms</span>, bạn thường mất{' '}
+          took <span className="tnum font-mono">{Math.round(current.deltaMs)}ms</span>, you usually take{' '}
           <span className="tnum font-mono">{Math.round(current.baselineMs)}ms</span> —{' '}
           <span style={{ color: VERDICT_COLORS[current.verdict] }}>{current.verdict}</span>{' '}
-          <span className="text-ink-500">(mốc theo {current.basis})</span>
+          <span className="text-ink-500">(based on {current.basis})</span>
         </p>
       )}
     </section>

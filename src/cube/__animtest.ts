@@ -5,15 +5,15 @@ const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.lo
 const near = (a: readonly number[], b: readonly number[]) => a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
 
 /**
- * Kiểm chứng cốt lõi của hoạt hình: quay lớp đi trọn vẹn 90 (hoặc 180) độ phải
- * đưa mỗi ô màu về đúng chỗ mà bảng hoán vị của nước đó chỉ ra. Nếu sai dấu hay
- * sai trục thì hoạt hình sẽ quay ngược, và test này bắt được ngay.
+ * The core check for the animation: turning the layer a full 90 (or 180) degrees
+ * must land every facelet exactly where that move's permutation table says. A
+ * wrong sign or axis makes the animation spin backwards, and this catches it.
  */
 for (const move of ['R', "R'", 'R2', 'U', "U'", 'L', 'F', "B'", 'D2', 'M', "M'", 'M2', 'E', 'S', 'r', "l'", 'u']) {
   const turn = moveTurn(move);
-  if (!turn) { check('hiểu được nước ' + move, false); continue; }
+  if (!turn) { check('move understood: ' + move, false); continue; }
   const perm = MOVE_PERMS[move];
-  // perm[j] = ô màu đi từ j tới... thực ra out[j] = state[perm[j]], nên ô perm[j] chuyển tới chỗ j
+  // out[j] = state[perm[j]], so the facelet at perm[j] moves into slot j
   let ok = true;
   let moved = 0;
   for (let j = 0; j < 54; j++) {
@@ -25,17 +25,17 @@ for (const move of ['R', "R'", 'R2', 'U', "U'", 'L', 'F', "B'", 'D2', 'M', "M'",
     const n = rotateVecDegrees(FACELET_NORMAL[src], turn.axis, turn.quarters * 90);
     if (!near(p, FACELET_POS[j]) || !near(n, FACELET_NORMAL[j])) ok = false;
   }
-  check(`hoạt hình ${move.padEnd(3)} quay trọn vòng khớp đúng bảng hoán vị (${moved} ô)`, ok);
+  check(`animating ${move.padEnd(3)} a full turn matches the permutation table (${moved} facelets)`, ok);
 }
 
-// Nửa chừng thì phải nằm giữa, không nhảy sẵn tới đích
+// Halfway through it must be in between, not already at the destination
 {
   const turn = moveTurn('R')!;
   const f = FACELET_POS.findIndex((_, i) => turn.inLayer(i) && FACELET_NORMAL[i][2] === 1);
   const half = rotateVecDegrees(FACELET_POS[f], turn.axis, turn.quarters * 45);
-  check('quay nửa chừng thì ô màu nằm giữa hai vị trí',
+  check('a half-completed turn puts the facelet between the two positions',
     !near(half, FACELET_POS[f]) && Math.abs(Math.hypot(...half) - Math.hypot(...FACELET_POS[f])) < 1e-6);
 }
-check('nước không hiểu được thì trả null', moveTurn('Z9') === null);
+check('an unreadable move returns null', moveTurn('Z9') === null);
 
-console.log(fails === 0 ? '\nTẤT CẢ ĐỀU PASS' : `\n${fails} TEST LỖI`);
+console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

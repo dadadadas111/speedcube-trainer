@@ -1,35 +1,35 @@
 /**
- * Xử lý dòng nước thô từ smart cube.
+ * Cleaning up the raw move stream from a smart cube.
  *
- * Cảm biến GAN chỉ đo được vòng quay của 6 mặt so với LÕI cube. Vì lõi quay theo
- * lát giữa nên:
- *   - Nước M được báo về thành hai sự kiện gần như đồng thời: R và L'
- *   - Nước rộng r được báo về thành L (không cách nào phân biệt với L thật)
- *   - Các phép xoay khối x/y/z hoàn toàn không sinh sự kiện
+ * GAN sensors only measure the 6 faces turning relative to the CORE. Because the
+ * core rides along with the middle slice:
+ *   - an M turn arrives as two near-simultaneous events, R and L'
+ *   - a wide r turn arrives as L (indistinguishable from a real L)
+ *   - x/y/z whole-cube rotations produce no events at all
  *
- * Module này dựng ngược lại chuỗi nước "như người giải nghĩ" từ chuỗi "như cảm
- * biến báo" — chính là hàm nghịch đảo của cube/sensorSim.ts.
+ * This module reconstructs the sequence "as the solver thinks of it" from the
+ * one "as the sensors report it" — the inverse of cube/sensorSim.ts.
  *
- * CHỖ DỄ SAI NHẤT: đồng nhất thức đầy đủ là `M = R L' x'`. Gộp R + L' thành M mà
- * quên vế x' thì mô hình bị xoay đi, trong khi mọi nước SAU đó vẫn được áp theo
- * hệ quy chiếu cũ — trạng thái hỏng hoàn toàn chứ không chỉ lệch một phép quay.
- * Nên mỗi lần gộp được một lát cắt, tất cả các nước còn lại phải được liên hợp
- * theo phép quay tương ứng.
+ * THE EASY MISTAKE: the full identity is `M = R L' x'`. Merging R + L' into M
+ * while forgetting the x' term leaves the model rotated while every LATER move
+ * is still applied in the old frame — the state ends up wrong outright, not just
+ * off by a rotation. So each time a slice is reconstructed, all remaining moves
+ * must be conjugated by the matching rotation.
  */
 
 import { moveFace, moveAmount, makeMove } from './alg';
 import { MOVE_PERMS, composePerm, IDENTITY_PERM } from './geometry';
 
 export interface TimedMove {
-  /** Ký hiệu nước, ví dụ "R'" hoặc "M2" */
+  /** Move notation, e.g. "R'" or "M2" */
   move: string;
-  /** Mốc thời gian tính bằng ms kể từ lúc bắt đầu solve */
+  /** Timestamp in ms since the solve started */
   t: number;
-  /** Nước này được ghép từ mấy sự kiện thô (dùng để hiệu chỉnh thống kê) */
+  /** How many raw events were merged into this move (used to adjust stats) */
   merged?: number;
 }
 
-/** cặp (mặt A + hướng, mặt B + hướng) -> nước lát cắt, và phép quay mà lõi bị lệch */
+/** (face A + direction, face B + direction) -> the slice move, and the core's drift */
 const SLICE_PAIRS: Record<string, { slice: string; rot: string }> = {
   "R|L'": { slice: 'M', rot: "x'" },
   "R'|L": { slice: "M'", rot: 'x' },
@@ -57,9 +57,9 @@ function invertPerm(p: Uint8Array): Uint8Array {
 }
 
 /**
- * Nước mặt mà cảm biến báo là `reported`, thật ra là nước gì trong hệ quy chiếu
- * của người giải khi lõi đã lệch đi `drift`. Đây là phép nghịch đảo của phép
- * liên hợp trong sensorSim.
+ * Given that the sensors reported face turn `reported`, which move is it in the
+ * solver's frame once the core has drifted by `drift`? The inverse of the
+ * conjugation done in sensorSim.
  */
 function unconjugate(reported: string, drift: Uint8Array): string {
   const p = composePerm(composePerm(drift, MOVE_PERMS[reported]), invertPerm(drift));
@@ -68,27 +68,28 @@ function unconjugate(reported: string, drift: Uint8Array): string {
 
 export interface CleanupOptions {
   /**
-   * Cửa sổ gộp hai nửa của một nước lát cắt (ms). Trên cube thật hai lớp không
-   * bao giờ quay đúng cùng lúc — đo trên solve thật thấy chênh tới ~120ms.
+   * Window for merging the two halves of a slice move (ms). On a real cube the
+   * two layers never turn at exactly the same instant — measured on a real solve
+   * the gap reached ~120ms.
    */
   sliceWindow?: number;
-  /** Cửa sổ gộp hai nước cùng mặt thành nước 180 (ms) */
+  /** Window for merging two same-face turns into a half turn (ms) */
   doubleWindow?: number;
 }
 
 /**
- * Chuẩn hoá dòng nước: dựng lại nước lát cắt, gộp nước đôi, bỏ nước triệt tiêu.
- * Trả về danh sách mới, không đụng vào mảng gốc.
+ * Normalise the stream: rebuild slice moves, merge half turns, drop
+ * cancellations. Returns a new list, leaving the input untouched.
  *
- * Kết quả sai khác trạng thái thật đúng một phép quay toàn khối (do không thể
- * biết người giải có xoay khối trong tay hay không), điều mà mọi phần phân tích
- * phía sau đều chịu được vì chúng kiểm tra trên cả 24 hướng.
+ * The result differs from the true state by at most one whole-cube rotation
+ * (there is no way to know whether the solver rotated the cube in their hands),
+ * which every downstream analysis tolerates because it checks all 24 frames.
  */
 export function cleanMoveStream(moves: TimedMove[], opts: CleanupOptions = {}): TimedMove[] {
   const sliceWindow = opts.sliceWindow ?? 140;
   const doubleWindow = opts.doubleWindow ?? 160;
 
-  // Bước 1: dựng lại lát cắt, đồng thời liên hợp phần còn lại theo phép quay của lõi
+  // Pass 1: rebuild slice moves, conjugating the rest by the core's rotation
   const sliced: TimedMove[] = [];
   let drift: Uint8Array = IDENTITY_PERM as Uint8Array;
   for (let i = 0; i < moves.length; i++) {
@@ -106,7 +107,7 @@ export function cleanMoveStream(moves: TimedMove[], opts: CleanupOptions = {}): 
     sliced.push({ move: cur, t: moves[i].t });
   }
 
-  // Bước 2: gộp hai nước liền kề cùng mặt (R R -> R2, M M -> M2, R R' -> bỏ)
+  // Pass 2: merge adjacent same-face turns (R R -> R2, M M -> M2, R R' -> gone)
   const out: TimedMove[] = [];
   for (const m of sliced) {
     const prev = out[out.length - 1];
@@ -121,7 +122,7 @@ export function cleanMoveStream(moves: TimedMove[], opts: CleanupOptions = {}): 
   return out;
 }
 
-/** Số nước theo cách đếm HTM (nước 180 tính là 1). */
+/** Move count in HTM (a half turn counts as one). */
 export function htmCount(moves: TimedMove[]): number {
   return moves.length;
 }

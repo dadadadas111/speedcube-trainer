@@ -4,16 +4,16 @@ import App from './App';
 import './index.css';
 
 /**
- * Worker sinh scramble của cubing.js chạy chung đồ thị module với bundle này,
- * nên file entry có thể bị nạp trong ngữ cảnh worker — nơi không có `document`.
- * Vì vậy mọi tác dụng phụ đụng DOM phải nằm sau lớp kiểm tra này, nếu không
- * worker sẽ chết và app âm thầm rơi về scramble random-move.
+ * The cubing.js scramble worker shares this module graph, so the entry file can
+ * be loaded in a worker context, where there is no `document`. Every DOM side
+ * effect must therefore sit behind this check — otherwise the worker dies and
+ * the app silently falls back to random-move scrambles.
  */
 if (typeof document !== 'undefined') {
   const fonts = document.createElement('link');
   fonts.rel = 'stylesheet';
   fonts.href =
-    'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap&subset=vietnamese,latin';
+    'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap';
   document.head.appendChild(fonts);
 
   const root = document.getElementById('root');

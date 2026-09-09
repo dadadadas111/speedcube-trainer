@@ -11,11 +11,11 @@ import SettingsPage from './pages/SettingsPage';
 type Tab = 'timer' | 'solves' | 'stats' | 'drill' | 'settings';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'timer', label: 'Bấm giờ', icon: '⏱' },
-  { id: 'solves', label: 'Solve', icon: '≡' },
-  { id: 'stats', label: 'Thống kê', icon: '◲' },
-  { id: 'drill', label: 'Drill alg', icon: '◈' },
-  { id: 'settings', label: 'Cài đặt', icon: '⚙' },
+  { id: 'timer', label: 'Timer', icon: '⏱' },
+  { id: 'solves', label: 'Solves', icon: '≡' },
+  { id: 'stats', label: 'Stats', icon: '◲' },
+  { id: 'drill', label: 'Drill', icon: '◈' },
+  { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
 export default function App() {
@@ -39,13 +39,14 @@ export default function App() {
   };
 
   if (!ready) {
-    return <div className="grid min-h-screen place-items-center text-sm text-ink-400">Đang mở dữ liệu…</div>;
+    return <div className="grid min-h-screen place-items-center text-sm text-ink-400">Opening your data…</div>;
   }
 
   return (
     <div className="flex min-h-screen flex-col sm:flex-row">
-      {/* Trên điện thoại thanh điều hướng nằm dưới đáy như app thường thấy, để
-          không ăn mất chiều ngang vốn đã hẹp. Từ sm trở lên mới là cột bên trái. */}
+      {/* On phones the nav sits at the bottom, the way apps normally do, so it
+          does not eat the little horizontal space there is. From sm up it becomes
+          a left-hand column. */}
       <div className="hidden shrink-0 border-r border-ink-800 bg-ink-850 sm:block sm:w-[168px]">
         <nav className="sticky top-0 flex h-screen flex-col gap-1 px-2 py-3">
           <div className="mb-4 px-2">
@@ -85,7 +86,7 @@ export default function App() {
               <span className="size-2.5 rounded-[2px] bg-cube-red" />
             </span>
             <label className="text-[13px] text-ink-400" htmlFor="session-select">
-              Phiên
+              Session
             </label>
             <select
               id="session-select"
@@ -119,7 +120,7 @@ export default function App() {
 
       <nav
         className="fixed inset-x-0 bottom-0 z-40 flex border-t border-ink-800 bg-ink-850 pb-[env(safe-area-inset-bottom)] sm:hidden"
-        aria-label="Điều hướng"
+        aria-label="Navigation"
       >
         {TABS.map((t) => (
           <button

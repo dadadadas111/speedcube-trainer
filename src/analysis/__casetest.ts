@@ -6,74 +6,74 @@ let fails = 0;
 const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.log('FAIL ' + n + (x ? '  <' + x + '>' : '')); } else console.log('ok   ' + n); };
 const cls = (a: string) => classifyCornerAlg(parseAlg(a));
 
-// 1. AUF TRƯỚC alg là cùng một case (chỉ cần xoay lớp U rồi làm y hệt).
-//    AUF SAU alg lại là case khác, vì đích của CMLL là bốn góc về đúng chỗ so
-//    với hai khối, nên thêm một nước U ở cuối là chưa xong.
+// 1. An AUF BEFORE the algorithm is the same case (turn U, then do the same thing).
+//    An AUF AFTER it is a different case: CMLL's goal is four corners placed
+//    correctly relative to the blocks, so a trailing U leaves it unfinished.
 {
   const base = cls("R U R' U R U2 R'")!;
-  check('Sune phân loại được', !!base && base.cornersOnly && base.preservesBlocks);
+  check('Sune classifies', !!base && base.cornersOnly && base.preservesBlocks);
   const preAuf = ["U R U R' U R U2 R'", "U2 R U R' U R U2 R'", "U' R U R' U R U2 R'"];
-  check('AUF trước alg -> vẫn cùng case',
+  check('AUF before the algorithm -> same case',
     preAuf.every((v) => cls(v)?.full === base.full), preAuf.map((v) => cls(v)?.full).join(' '));
   const postAuf = ["R U R' U R U2 R' U", "R U R' U R U2 R' U2"];
-  check('AUF sau alg -> case khác',
+  check('AUF after the algorithm -> different case',
     postAuf.every((v) => cls(v)?.full !== base.full), postAuf.map((v) => cls(v)?.full).join(' '));
-  check('nhưng vẫn cùng họ (hướng bốn góc không đổi)',
+  check('but still the same family (corner orientations unchanged)',
     [...preAuf, ...postAuf].every((v) => cls(v)?.family === base.family));
 }
 
-// 2. Sune và Anti-Sune là hai case khác nhau nhưng cùng dạng "ba góc xoay"
+// 2. Sune and Anti-Sune are different cases but share the "three twisted corners" shape
 {
   const sune = cls("R U R' U R U2 R'")!;
   const anti = cls("R U2 R' U' R U' R'")!;
-  check('Sune khác Anti-Sune', sune.full !== anti.full, `${sune.full} vs ${anti.full}`);
-  check('Sune: ba góc xoay cùng chiều', describeFamily(sune.family) === 'ba góc xoay cùng chiều', describeFamily(sune.family));
-  check('Anti-Sune: ba góc xoay cùng chiều', describeFamily(anti.family) === 'ba góc xoay cùng chiều');
-  check('nhưng khác họ (chiều xoay ngược nhau)', sune.family !== anti.family, `${sune.family} vs ${anti.family}`);
+  check('Sune differs from Anti-Sune', sune.full !== anti.full, `${sune.full} vs ${anti.full}`);
+  check('Sune: three corners twisted the same way', describeFamily(sune.family) === 'three corners twisted the same way', describeFamily(sune.family));
+  check('Anti-Sune: three corners twisted the same way', describeFamily(anti.family) === 'three corners twisted the same way');
+  check('but different families (opposite twist direction)', sune.family !== anti.family, `${sune.family} vs ${anti.family}`);
 }
 
-// 3. Alg và nghịch đảo của nó giải hai case ngược nhau
+// 3. An algorithm and its inverse solve opposite cases
 {
   const a = cls("R U R' U R U2 R'")!;
   const b = classifyCornerAlg(invertAlg(parseAlg("R U R' U R U2 R'")))!;
-  check('alg nghịch đảo ra case khác', a.full !== b.full, `${a.full} / ${b.full}`);
+  check('the inverse gives a different case', a.full !== b.full, `${a.full} / ${b.full}`);
 }
 
-// 4. Bốn case của cùng một họ Sune phải là bốn chữ ký khác nhau
+// 4. Four cases in the same Sune family must have four distinct signatures
 {
   const sune = cls("R U R' U R U2 R'")!;
   const niklas = cls("R U' L' U R' U' L")!;
-  check('Sune và Niklas cùng họ', sune.family === niklas.family, `${sune.family} vs ${niklas.family}`);
-  check('nhưng khác case', sune.full !== niklas.full, `${sune.full} vs ${niklas.full}`);
+  check('Sune and Niklas share a family', sune.family === niklas.family, `${sune.family} vs ${niklas.family}`);
+  check('but are different cases', sune.full !== niklas.full, `${sune.full} vs ${niklas.full}`);
 }
 
-// 5. Alg kéo góc lớp dưới lên trên thì không thuộc dạng này -> trả về null
+// 5. An algorithm that drags a D-layer corner up is out of scope -> returns null
 {
-  check('sexy move không phân loại được (nó lôi góc lớp D lên)', cls("R U R' U'") === null);
+  check('the sexy move does not classify (it pulls up a D corner)', cls("R U R' U'") === null);
   const tperm = cls("R U R' U' R' F R2 U' R' U' R U R' F'");
-  check('T-perm phân loại được', tperm !== null);
-  check('T-perm giữ nguyên hai khối', tperm!.preservesBlocks);
-  check('T-perm không xoay góc nào', tperm!.family === '0000', tperm!.family);
-  check('nhưng có hoán vị góc', tperm!.full !== '00000000', tperm!.full);
+  check('T-perm classifies', tperm !== null);
+  check('T-perm keeps both blocks', tperm!.preservesBlocks);
+  check('T-perm twists no corner', tperm!.family === '0000', tperm!.family);
+  check('but does permute corners', tperm!.full !== '00000000', tperm!.full);
 }
 
-// 6. Cả bộ seed đều phân loại được, và các họ tách ra đúng như tên đặt
+// 6. Every seeded algorithm classifies, and the families split as their names suggest
 {
   const cmll = SEED_ALGS.filter((a) => a.group === 'CMLL');
   const results = cmll.map((a) => ({ name: a.name, c: cls(a.alg) }));
-  check('mọi alg CMLL mẫu đều phân loại được', results.every((r) => r.c !== null));
-  check('mọi alg CMLL mẫu đều giữ hai khối', results.every((r) => r.c!.preservesBlocks));
+  check('every sample CMLL algorithm classifies', results.every((r) => r.c !== null));
+  check('every sample CMLL algorithm keeps the blocks', results.every((r) => r.c!.preservesBlocks));
   const families = new Map<string, string[]>();
   for (const r of results) {
     const f = r.c!.family;
     if (!families.has(f)) families.set(f, []);
     families.get(f)!.push(r.name);
   }
-  console.log('   nhóm suy ra từ tính toán:');
+  console.log('   families derived by computation:');
   for (const [f, names] of families) console.log(`     ${f}  ${describeFamily(f).padEnd(34)} ${names.join(', ')}`);
-  check('các alg mẫu rơi vào nhiều họ khác nhau', families.size >= 5, String(families.size));
-  check('Sune và Anti-Sune không bị gộp chung',
+  check('the samples land in several different families', families.size >= 5, String(families.size));
+  check('Sune and Anti-Sune are not lumped together',
     families.get(cls("R U R' U R U2 R'")!.family)?.includes('Anti-Sune') !== true);
 }
 
-console.log(fails === 0 ? '\nTẤT CẢ ĐỀU PASS' : `\n${fails} TEST LỖI`);
+console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

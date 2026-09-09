@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build:
-    name: Kiểm tra và build
+    name: Check and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -24,16 +24,16 @@ jobs:
 
       - run: npm ci
 
-      - name: Kiểm tra kiểu
+      - name: Typecheck
         run: npm run typecheck
 
-      - name: Chạy test lõi (engine khối, nhận dạng bước Roux, drill)
+      - name: Core tests (cube engine, Roux step detection, drill)
         run: npm test
 
       - name: Build
         run: npm run build
 
-      - name: Lưu bản build
+      - name: Upload build
         uses: actions/upload-artifact@v5
         with:
           name: dist
@@ -41,7 +41,7 @@ jobs:
           retention-days: 7
 
   deploy:
-    name: Deploy lên cube.dash.id.vn
+    name: Deploy to cube.dash.id.vn
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -59,7 +59,7 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Chuẩn bị SSH
+      - name: Set up SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -70,10 +70,10 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      # Đường mạng từ runner của GitHub tới VPS thỉnh thoảng rớt gói, biểu hiện
-      # là "connection timed out". Không phải lỗi phía app, nên chỉ cần thử lại
-      # thay vì để cả lần deploy hỏng. ConnectTimeout ngắn để hỏng thì hỏng nhanh.
-      - name: Đẩy bản build lên server
+      # The route from GitHub's runner to the VPS drops packets now and then,
+      # which shows up as "connection timed out". That is not an app problem, so
+      # retry instead of failing the deploy. A short ConnectTimeout fails fast.
+      - name: Upload the build to the server
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -81,25 +81,25 @@ jobs:
         run: |
           set +e
           for attempt in 1 2 3 4; do
-            echo "--- lần thử $attempt ---"
+            echo "--- attempt $attempt ---"
             rsync -az --delete --checksum \
               -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3" \
               dist/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
             code=$?
-            [ $code -eq 0 ] && echo "đẩy xong ở lần thử $attempt" && exit 0
-            echo "lần thử $attempt hỏng (mã $code), chờ rồi thử lại"
+            [ $code -eq 0 ] && echo "uploaded on attempt $attempt" && exit 0
+            echo "attempt $attempt failed (code $code), waiting before retry"
             sleep $((attempt * 10))
           done
-          echo "Đã thử 4 lần vẫn không nối được tới server."
+          echo "Four attempts and still no connection to the server."
           exit 1
 
-      - name: Kiểm tra site còn sống
+      - name: Check the site is up
         run: |
           for i in 1 2 3 4 5 6; do
             code=$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' https://cube.dash.id.vn/ || echo 000)
-            echo "lần $i: HTTP $code"
+            echo "attempt $i: HTTP $code"
             [ "$code" = "200" ] && exit 0
             sleep 5
           done
-          echo "Site không trả về 200 — kiểm tra nginx trên server."
+          echo "The site did not return 200 — check nginx on the server."
           exit 1

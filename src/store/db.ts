@@ -1,4 +1,4 @@
-/** Lưu trữ cục bộ bằng IndexedDB — toàn bộ dữ liệu nằm trên máy bạn. */
+/** Local storage via IndexedDB — all data stays on your machine. */
 
 import Dexie, { type Table } from 'dexie';
 import type { TimedMove } from '../cube/moveStream';
@@ -19,22 +19,22 @@ export interface Solve {
   sessionId: number;
   date: number;
   scramble: string;
-  /** Thời gian thô, chưa cộng phạt (ms) */
+  /** Raw time before penalties (ms) */
   timeMs: number;
   penalty: Penalty;
   source: 'smartcube' | 'manual';
-  /** Rỗng nếu bấm giờ bằng tay */
+  /** Empty for hand-timed solves */
   moves: TimedMove[];
   comment?: string;
 }
 
 export interface AlgEntry {
   id?: number;
-  /** Mảng lớn: CMLL, LSE, PLL... */
+  /** Broad set: CMLL, LSE, PLL, ... */
   group: string;
-  /** Họ case, ví dụ Sune, Anti-Sune, EOLR — đây là tầng người dùng bấm vào trước */
+  /** Case family, e.g. Sune, Anti-Sune, EOLR — the level the user opens first */
   family: string;
-  /** Tên case cụ thể trong họ */
+  /** The specific case within the family */
   name: string;
   alg: string;
   createdAt: number;
@@ -73,8 +73,8 @@ class TrainerDB extends Dexie {
       reps: '++id, algId, date',
       settings: 'key',
     });
-    // Thư viện alg tách thêm một tầng "họ" để còn dùng được khi có hàng trăm alg.
-    // Alg cũ chưa có họ thì lấy luôn tên nó làm họ.
+    // The alg library gained a "family" level so it stays usable with hundreds
+    // of algs. Older algs without one simply take their own name as the family.
     this.version(2)
       .stores({
         sessions: '++id, name, createdAt',
@@ -89,8 +89,8 @@ class TrainerDB extends Dexie {
           .toCollection()
           .modify((a) => {
             if (a.family) return;
-            // Alg mẫu cũ thì xếp lại theo họ mới; alg người dùng tự thêm thì lấy
-            // luôn tên nó làm họ, không đoán hộ.
+            // Refile the old seed algs under the new families; for algs the user
+            // added themselves, use the name as the family rather than guessing.
             const seed = SEED_ALGS.find((x) => x.alg === a.alg);
             if (seed) {
               a.group = seed.group;
@@ -109,7 +109,7 @@ export const db = new TrainerDB();
 export async function ensureDefaultSession(): Promise<number> {
   const first = await db.sessions.orderBy('createdAt').first();
   if (first?.id) return first.id;
-  return db.sessions.add({ name: 'Phiên chính', method: 'roux', createdAt: Date.now() });
+  return db.sessions.add({ name: 'Main session', method: 'roux', createdAt: Date.now() });
 }
 
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
@@ -139,9 +139,9 @@ export async function exportAll(): Promise<BackupFile> {
   return { app: 'speedcube-trainer', version: 1, exportedAt: Date.now(), sessions, solves, algs, reps, settings };
 }
 
-/** Nhập dữ liệu, GHI ĐÈ toàn bộ dữ liệu hiện có. */
+/** Import data, REPLACING everything currently stored. */
 export async function importAll(data: BackupFile): Promise<void> {
-  if (data.app !== 'speedcube-trainer') throw new Error('File sao lưu không đúng định dạng.');
+  if (data.app !== 'speedcube-trainer') throw new Error('That is not a valid backup file.');
   await db.transaction('rw', db.sessions, db.solves, db.algs, db.reps, db.settings, async () => {
     await Promise.all([db.sessions.clear(), db.solves.clear(), db.algs.clear(), db.reps.clear(), db.settings.clear()]);
     await db.sessions.bulkAdd(data.sessions);

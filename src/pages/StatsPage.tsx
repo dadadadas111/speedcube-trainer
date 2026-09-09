@@ -4,7 +4,7 @@ import {
   ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 
-/** Biểu đồ dữ liệu không cần hoạt ảnh mở màn — nó chỉ làm chậm việc đọc số. */
+/** Data charts do not need an entrance animation — it only delays reading. */
 const NO_ANIM = { isAnimationActive: false } as const;
 import { useApp } from '../store/app';
 import { db, type Solve } from '../store/db';
@@ -87,9 +87,9 @@ export default function StatsPage() {
   if (!solves.length) {
     return (
       <div className="panel p-8 text-center">
-        <h2 className="text-lg font-semibold">Chưa có gì để phân tích</h2>
+        <h2 className="text-lg font-semibold">Nothing to analyse yet</h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-ink-400">
-          Giải vài lần ở trang Bấm giờ. Từ khoảng 12 solve trở lên thì phần gợi ý bắt đầu đáng tin.
+          Do a few solves on the Timer page. From about 12 solves on, the recommendations start to mean something.
         </p>
       </div>
     );
@@ -103,34 +103,34 @@ export default function StatsPage() {
             className={`btn !py-1 !text-[13px] ${scope === 'session' ? '!border-cube-blue !text-cube-blue' : ''}`}
             onClick={() => setScope('session')}
           >
-            Phiên này
+            This session
           </button>
           <button
             className={`btn !py-1 !text-[13px] ${scope === 'all' ? '!border-cube-blue !text-cube-blue' : ''}`}
             onClick={() => setScope('all')}
           >
-            Tất cả
+            All
           </button>
         </div>
         <p className="text-[13px] text-ink-400">
-          {analyses.length}/{solves.length} solve có dữ liệu từng nước
+          {analyses.length}/{solves.length} solves with move data
         </p>
       </div>
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Kpi label="Số solve" value={String(solves.length)} />
-        <Kpi label="Tốt nhất" value={formatTime(finite.length ? Math.min(...finite) : NaN)} />
-        <Kpi label="ao5 hiện tại" value={formatTime(averageOf(times.slice(-5)))} />
-        <Kpi label="ao12 hiện tại" value={formatTime(averageOf(times.slice(-12)))} />
-        <Kpi label="ao12 tốt nhất" value={formatTime(bestAverage(times, 12))} />
-        <Kpi label="Độ lệch chuẩn" value={formatTime(stdevOf(times))} />
+        <Kpi label="Solves" value={String(solves.length)} />
+        <Kpi label="Best" value={formatTime(finite.length ? Math.min(...finite) : NaN)} />
+        <Kpi label="Current ao5" value={formatTime(averageOf(times.slice(-5)))} />
+        <Kpi label="Current ao12" value={formatTime(averageOf(times.slice(-12)))} />
+        <Kpi label="Best ao12" value={formatTime(bestAverage(times, 12))} />
+        <Kpi label="Std dev" value={formatTime(stdevOf(times))} />
       </section>
 
       {insights.length > 0 && (
         <section className="panel p-5">
-          <h2 className="text-base font-semibold">Nên cải thiện gì</h2>
+          <h2 className="text-base font-semibold">What to work on</h2>
           <p className="mt-1 text-[13px] text-ink-400">
-            Xếp theo số giây bạn đang mất so với người giải cùng tốc độ.
+            Ranked by the seconds you are losing against solvers at your speed.
           </p>
           <ul className="mt-4 flex flex-col gap-3">
             {insights.slice(0, 6).map((ins, i) => (
@@ -147,14 +147,14 @@ export default function StatsPage() {
       )}
 
       <section className="panel p-5">
-        <h2 className="mb-4 text-base font-semibold">Thời gian qua từng solve</h2>
+        <h2 className="mb-4 text-base font-semibold">Time across solves</h2>
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={trendData} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
             <CartesianGrid stroke={GRID} vertical={false} />
             <XAxis dataKey="i" {...AXIS} tickLine={false} axisLine={{ stroke: GRID }} minTickGap={24} />
             <YAxis {...AXIS} tickLine={false} axisLine={false} width={44} unit="s" />
             <Tooltip contentStyle={tooltipStyle} labelFormatter={(v) => `Solve ${v}`} />
-            <Line {...NO_ANIM} type="linear" dataKey="time" stroke="#4a5a6d" dot={{ r: 2, fill: '#73869b' }} strokeWidth={1} name="thời gian" />
+            <Line {...NO_ANIM} type="linear" dataKey="time" stroke="#4a5a6d" dot={{ r: 2, fill: '#73869b' }} strokeWidth={1} name="time" />
             <Line {...NO_ANIM} type="monotone" dataKey="ao5" stroke="#2f7ff2" dot={false} strokeWidth={2} name="ao5" connectNulls />
             <Line {...NO_ANIM} type="monotone" dataKey="ao12" stroke="#ffcf2e" dot={false} strokeWidth={2} name="ao12" connectNulls />
           </LineChart>
@@ -164,9 +164,9 @@ export default function StatsPage() {
       {steps.length > 0 && (
         <>
           <section className="panel p-5">
-            <h2 className="text-base font-semibold">Thời gian đi đâu</h2>
+            <h2 className="text-base font-semibold">Where the time goes</h2>
             <p className="mt-1 text-[13px] text-ink-400">
-              So sánh tỷ trọng của bạn với hồ sơ tham chiếu. Thanh nào vượt vạch là chỗ đang mất thời gian.
+              Your share of each step against a reference profile. Any bar past the marker is where time is going.
             </p>
             <div className="mt-4 flex flex-col gap-3">
               {steps.map((s) => (
@@ -176,9 +176,9 @@ export default function StatsPage() {
           </section>
 
           <section className="panel p-5">
-            <h2 className="mb-1 text-base font-semibold">Cấu trúc solve theo thời gian</h2>
+            <h2 className="mb-1 text-base font-semibold">Solve structure over time</h2>
             <p className="mb-4 text-[13px] text-ink-400">
-              Mỗi cột là một solve. Nhìn dải nào dày lên khi bạn mệt hoặc gặp case khó.
+              Each column is one solve. Watch which band thickens when you tire or hit a hard case.
             </p>
             <ResponsiveContainer width="100%" height={240}>
               <AreaChart data={stackData} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
@@ -206,9 +206,9 @@ export default function StatsPage() {
 
           <div className="grid gap-5 lg:grid-cols-2">
             <section className="panel p-5">
-              <h2 className="mb-1 text-base font-semibold">Dừng tay ở đâu nhiều nhất</h2>
+              <h2 className="mb-1 text-base font-semibold">Where the pauses are</h2>
               <p className="mb-4 text-[13px] text-ink-400">
-                Phần trăm thời gian của mỗi bước mà tay bạn không quay.
+                Percentage of each step spent with the cube not turning.
               </p>
               <ResponsiveContainer width="100%" height={210}>
                 <ComposedChart data={steps.map((s) => ({ name: s.label, key: s.key, v: Math.round(s.pauseRatio * 100), ref: Math.round(s.refPauseRatio * 100) }))} margin={{ top: 4, right: 8, bottom: 0, left: -8 }}>
@@ -216,19 +216,19 @@ export default function StatsPage() {
                   <XAxis dataKey="name" {...AXIS} tickLine={false} axisLine={{ stroke: GRID }} interval={0} tickFormatter={(v: string) => v.replace('LSE ', '')} />
                   <YAxis {...AXIS} tickLine={false} axisLine={false} width={44} unit="%" domain={[0, 'auto']} />
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Bar {...NO_ANIM} dataKey="v" name="của bạn" radius={[3, 3, 0, 0]}>
+                  <Bar {...NO_ANIM} dataKey="v" name="you" radius={[3, 3, 0, 0]}>
                     {steps.map((s) => (
                       <Cell key={s.key} fill={stepColor(s.key)} />
                     ))}
                   </Bar>
-                  <Line {...NO_ANIM} type="monotone" dataKey="ref" stroke="#8697a9" strokeDasharray="4 3" dot={false} name="tham chiếu" />
+                  <Line {...NO_ANIM} type="monotone" dataKey="ref" stroke="#8697a9" strokeDasharray="4 3" dot={false} name="reference" />
                 </ComposedChart>
               </ResponsiveContainer>
             </section>
 
             <section className="panel p-5">
-              <h2 className="mb-1 text-base font-semibold">Số nước mỗi bước</h2>
-              <p className="mb-4 text-[13px] text-ink-400">Vạch xám là mức hiệu quả tham chiếu.</p>
+              <h2 className="mb-1 text-base font-semibold">Moves per step</h2>
+              <p className="mb-4 text-[13px] text-ink-400">The grey mark is the reference movecount.</p>
               <div className="flex flex-col gap-2.5">
                 {steps.map((s) => (
                   <div key={s.key} className="flex items-center gap-3">
@@ -255,7 +255,7 @@ export default function StatsPage() {
       )}
 
       <section className="panel p-5">
-        <h2 className="mb-4 text-base font-semibold">Phân bố thời gian</h2>
+        <h2 className="mb-4 text-base font-semibold">Time distribution</h2>
         <ResponsiveContainer width="100%" height={190}>
           <BarChart data={histogram} margin={{ top: 4, right: 8, bottom: 0, left: -14 }}>
             <CartesianGrid stroke={GRID} vertical={false} />
@@ -263,7 +263,7 @@ export default function StatsPage() {
             <YAxis {...AXIS} tickLine={false} axisLine={false} width={44} allowDecimals={false} />
             <Tooltip contentStyle={tooltipStyle} />
             <ReferenceLine x={(meanOf(times) / 1000).toFixed(1)} stroke="#ffcf2e" />
-            <Bar {...NO_ANIM} dataKey="count" fill="#2f7ff2" radius={[3, 3, 0, 0]} name="số solve" />
+            <Bar {...NO_ANIM} dataKey="count" fill="#2f7ff2" radius={[3, 3, 0, 0]} name="solves" />
           </BarChart>
         </ResponsiveContainer>
       </section>
@@ -297,7 +297,7 @@ function ShareBar({ step }: { step: ReturnType<typeof aggregateSteps>[number] })
         <span
           className="absolute top-0 h-full w-0.5 bg-ink-200"
           style={{ left: `${(step.refShare / max) * 100}%` }}
-          title={`tham chiếu ${Math.round(step.refShare * 100)}%`}
+          title={`reference ${Math.round(step.refShare * 100)}%`}
         />
       </div>
       <span className="tnum w-11 shrink-0 text-right font-mono text-[13px]">{Math.round(step.share * 100)}%</span>

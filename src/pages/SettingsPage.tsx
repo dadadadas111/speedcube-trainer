@@ -26,24 +26,24 @@ export default function SettingsPage() {
     try {
       await importAll(JSON.parse(await file.text()));
       bump();
-      setMessage('Đã nhập xong. Tải lại trang để thấy đầy đủ.');
+      setMessage('Import finished. Reload the page to see everything.');
     } catch (e) {
-      setMessage(`Không nhập được: ${(e as Error).message}`);
+      setMessage(`Import failed: ${(e as Error).message}`);
     }
   };
 
   const wipe = async () => {
-    if (!confirm('Xoá toàn bộ solve, alg và lần drill? Không khôi phục được.')) return;
+    if (!confirm('Delete every solve, algorithm and drill rep? This cannot be undone.')) return;
     await Promise.all([db.solves.clear(), db.reps.clear(), db.algs.clear()]);
     bump();
-    setMessage('Đã xoá sạch dữ liệu.');
+    setMessage('All data deleted.');
   };
 
   return (
     <div className="flex max-w-[820px] flex-col gap-5">
       <section className="panel p-5">
-        <h2 className="text-base font-semibold">Phiên tập</h2>
-        <p className="mt-1 text-[13px] text-ink-400">Tách phiên để so sánh, ví dụ một phiên riêng khi đang tập kỹ thuật mới.</p>
+        <h2 className="text-base font-semibold">Sessions</h2>
+        <p className="mt-1 text-[13px] text-ink-400">Separate sessions make comparison easier — for instance one just for a technique you are learning.</p>
         <div className="mt-4 flex flex-col gap-2">
           {sessions.map((s) => (
             <div key={s.id} className="flex items-center gap-2">
@@ -56,21 +56,21 @@ export default function SettingsPage() {
                 className={`btn !py-1.5 ${sessionId === s.id ? '!border-cube-blue !text-cube-blue' : ''}`}
                 onClick={() => s.id && void setSession(s.id)}
               >
-                {sessionId === s.id ? 'Đang dùng' : 'Chọn'}
+                {sessionId === s.id ? 'Active' : 'Use'}
               </button>
               <button
                 className="btn btn-danger !py-1.5"
                 disabled={sessions.length <= 1}
-                onClick={() => s.id && confirm(`Xoá phiên "${s.name}" cùng toàn bộ solve trong đó?`) && void deleteSession(s.id)}
+                onClick={() => s.id && confirm(`Delete session "${s.name}" and every solve in it?`) && void deleteSession(s.id)}
               >
-                Xoá
+                Delete
               </button>
             </div>
           ))}
           <div className="mt-1 flex gap-2">
             <input
               className="input flex-1"
-              placeholder="Tên phiên mới"
+              placeholder="New session name"
               value={newSession}
               onChange={(e) => setNewSession(e.target.value)}
             />
@@ -82,16 +82,16 @@ export default function SettingsPage() {
                 setNewSession('');
               }}
             >
-              Tạo phiên
+              Create session
             </button>
           </div>
         </div>
       </section>
 
       <section className="panel p-5">
-        <h2 className="text-base font-semibold">Bấm giờ</h2>
+        <h2 className="text-base font-semibold">Timing</h2>
         <div className="mt-4 flex flex-col gap-3">
-          <Row label="Phương pháp phân tích" hint="Quyết định app tách solve thành những bước nào.">
+          <Row label="Analysis method" hint="Decides which steps a solve is broken into.">
             <select
               className="input max-w-[180px]"
               value={settings.method}
@@ -99,36 +99,36 @@ export default function SettingsPage() {
             >
               <option value="roux">Roux</option>
               <option value="cfop">CFOP</option>
-              <option value="auto">Tự nhận</option>
+              <option value="auto">Auto detect</option>
             </select>
           </Row>
           <Toggle
-            label="Dẫn vặn scramble"
-            hint="App chỉ từng nước, bắt lỗi ngay khi vặn sai, và đồng hồ chỉ sẵn sàng khi scramble đã đúng. Tắt đi thì bắt đầu tính giờ từ nước đầu tiên bất kỳ."
+            label="Guided scrambling"
+            hint="Shows one move at a time, flags a wrong turn immediately, and only arms the timer once the scramble is right. Off, the clock starts on any first move."
             value={settings.requireScrambleMatch}
             onChange={(v) => void updateSettings({ requireScrambleMatch: v })}
           />
           <Toggle
-            label="Bật inspection"
-            hint="Đếm ngược sau khi khối khớp scramble. Nước đầu tiên bắt đầu tính giờ."
+            label="Inspection"
+            hint="Counts down once the cube matches the scramble. The first move starts the timer."
             value={settings.useInspection}
             onChange={(v) => void updateSettings({ useInspection: v })}
           />
           <Toggle
             label="Scramble random-state"
-            hint="Chuẩn WCA. Tắt đi nếu máy yếu — khi đó dùng scramble ngẫu nhiên theo nước."
+            hint="WCA standard. Turn it off on a slow device — random moves are used instead."
             value={settings.randomStateScramble}
             onChange={(v) => void updateSettings({ randomStateScramble: v })}
           />
           <Toggle
-            label="Khối ảo bằng bàn phím"
-            hint="Dùng thử app khi chưa pair smart cube."
+            label="Keyboard cube"
+            hint="Try the app out before pairing a smart cube."
             value={settings.keyboardCube}
             onChange={(v) => void updateSettings({ keyboardCube: v })}
           />
           {settings.keyboardCube && (
             <div className="rounded-lg border border-ink-700 bg-ink-900 p-3">
-              <p className="mb-2 text-[13px] text-ink-300">Giữ Shift để thành nước 180 (ví dụ Shift+i = R2).</p>
+              <p className="mb-2 text-[13px] text-ink-300">Hold Shift for a half turn (Shift+i = R2, for example).</p>
               <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-4">
                 {KEYMAP_HELP.map(([k, v]) => (
                   <div key={k} className="flex justify-between font-mono text-[13px]">
@@ -143,9 +143,9 @@ export default function SettingsPage() {
       </section>
 
       <section className="panel p-5">
-        <h2 className="text-base font-semibold">Hiển thị khối</h2>
+        <h2 className="text-base font-semibold">Cube display</h2>
         <div className="mt-4 flex flex-col gap-3">
-          <Row label="Kiểu vẽ khối" hint="3D kéo xoay được; trải phẳng thấy đủ 6 mặt cùng lúc.">
+          <Row label="Cube style" hint="3D can be dragged to rotate; the net shows all six faces at once.">
             <div className="flex gap-1">
               <button
                 className={`btn !py-1 !text-[13px] ${settings.cubeView === '3d' ? '!border-cube-blue !text-cube-blue' : ''}`}
@@ -157,13 +157,13 @@ export default function SettingsPage() {
                 className={`btn !py-1 !text-[13px] ${settings.cubeView === 'net' ? '!border-cube-blue !text-cube-blue' : ''}`}
                 onClick={() => void updateSettings({ cubeView: 'net' })}
               >
-                Trải phẳng
+                Net
               </button>
             </div>
           </Row>
           <Toggle
-            label="Khối trên màn hình xoay theo tay"
-            hint="Dùng con quay trong cube. Thử nghiệm — tôi chưa kiểm chứng được với cube thật, nếu thấy xoay sai trục thì tắt đi và báo lại."
+            label="On-screen cube follows your hands"
+            hint="Uses the cube's gyroscope. Experimental — untested against a real cube, so if the axes look wrong, switch it off and say so."
             value={settings.useGyro}
             onChange={(v) => void updateSettings({ useGyro: v })}
           />
@@ -171,22 +171,22 @@ export default function SettingsPage() {
       </section>
 
       <section className="panel p-5">
-        <h2 className="text-base font-semibold">Khi app và khối thật lệch nhau</h2>
+        <h2 className="text-base font-semibold">When the app and the cube disagree</h2>
         <div className="mt-3">
           <CubeSync />
         </div>
       </section>
 
       <section className="panel p-5">
-        <h2 className="text-base font-semibold">Cách tính "đứng yên"</h2>
+        <h2 className="text-base font-semibold">How pauses are counted</h2>
         <p className="mt-1 max-w-[65ch] text-[13px] text-ink-400">
-          Một khoảng nghỉ được tính là đứng yên khi nó vừa dài hơn ngưỡng cố định, vừa dài hơn một bội số của
-          khoảng cách trung vị giữa hai nước trong chính solve đó. Nhờ vậy ngưỡng tự co giãn theo tốc độ của bạn.
+          A gap counts as a pause when it is longer than the fixed floor AND longer than a multiple of the median
+          gap between moves in that same solve. That way the threshold scales with your speed.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
             <label className="field-label" htmlFor="pmin">
-              Ngưỡng tối thiểu: {settings.pauseMinMs}ms
+              Floor: {settings.pauseMinMs}ms
             </label>
             <input
               id="pmin"
@@ -201,7 +201,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="field-label" htmlFor="pfac">
-              Bội số trung vị: {settings.pauseFactor.toFixed(1)}×
+              Median multiple: {settings.pauseFactor.toFixed(1)}×
             </label>
             <input
               id="pfac"
@@ -218,17 +218,17 @@ export default function SettingsPage() {
       </section>
 
       <section className="panel p-5">
-        <h2 className="text-base font-semibold">Dữ liệu</h2>
+        <h2 className="text-base font-semibold">Data</h2>
         <p className="mt-1 max-w-[65ch] text-[13px] text-ink-400">
-          Toàn bộ dữ liệu nằm trong trình duyệt trên máy bạn, không gửi đi đâu cả. Xoá dữ liệu trình duyệt là mất,
-          nên thỉnh thoảng hãy xuất file sao lưu.
+          Everything lives in this browser on your machine and is never sent anywhere. Clearing your browser data
+          wipes it, so export a backup now and then.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="btn" onClick={() => void doExport()}>
-            Xuất file sao lưu
+            Export backup
           </button>
           <button className="btn" onClick={() => fileRef.current?.click()}>
-            Nhập từ file
+            Import from file
           </button>
           <input
             ref={fileRef}
@@ -238,7 +238,7 @@ export default function SettingsPage() {
             onChange={(e) => e.target.files?.[0] && void doImport(e.target.files[0])}
           />
           <button className="btn btn-danger" onClick={() => void wipe()}>
-            Xoá sạch dữ liệu
+            Delete all data
           </button>
         </div>
         {message && <p className="mt-3 text-sm text-warn">{message}</p>}
@@ -247,30 +247,30 @@ export default function SettingsPage() {
       <section className="panel p-5">
         <h2 className="text-base font-semibold">Smart cube</h2>
         <p className="mt-1 max-w-[65ch] text-[13px] text-ink-400">
-          Hỗ trợ GAN Gen2/Gen3/Gen4 qua Web Bluetooth. Cần Chrome hoặc Edge — Safari và iOS không chạy được
-          Web Bluetooth.
+          Supports GAN Gen2/Gen3/Gen4 over Web Bluetooth. Needs Chrome or Edge — Safari and iOS have no Web
+          Bluetooth.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-[13px]">
           <span className="text-ink-400">
-            Trình duyệt {typeof navigator !== 'undefined' && 'bluetooth' in navigator ? 'có' : 'không'} hỗ trợ Web Bluetooth
+            This browser {typeof navigator !== 'undefined' && 'bluetooth' in navigator ? 'supports' : 'does not support'} Web Bluetooth
           </span>
           {cubeLink.info && (
             <span className="font-mono text-ink-300">
-              {cubeLink.info.name} · {cubeLink.info.hardware ?? '?'} · pin {cubeLink.info.battery ?? '?'}%
+              {cubeLink.info.name} · {cubeLink.info.hardware ?? '?'} · battery {cubeLink.info.battery ?? '?'}%
             </span>
           )}
         </div>
 
-        <h3 className="mt-5 text-sm font-semibold">Địa chỉ MAC đã lưu</h3>
+        <h3 className="mt-5 text-sm font-semibold">Saved MAC addresses</h3>
         <p className="mt-1 max-w-[65ch] text-[13px] text-ink-400">
-          GAN mã hoá dữ liệu bằng khoá trộn từ địa chỉ MAC nên bắt buộc phải có. Chrome trên máy tính đọc được
-          tự động; trên điện thoại thì thường phải nhập tay một lần, trừ khi bạn bật
+          GAN encrypts its data with a key salted from the MAC address, so one is required. Chrome on desktop reads
+          it automatically; on a phone you usually type it once, unless you enable
           <span className="font-mono text-ink-300"> chrome://flags</span> →{' '}
-          <span className="text-ink-300">Experimental Web Platform features</span>. Nếu nhập nhầm thì cube vẫn
-          kết nối được nhưng dữ liệu ra rác — xoá ở đây rồi kết nối lại để nhập lại.
+          <span className="text-ink-300">Experimental Web Platform features</span>. With a wrong MAC the cube still
+          connects but the data is garbage — delete it here and reconnect to enter it again.
         </p>
         {macs.length === 0 ? (
-          <p className="mt-3 text-[13px] text-ink-500">Chưa lưu MAC nào.</p>
+          <p className="mt-3 text-[13px] text-ink-500">No MAC saved yet.</p>
         ) : (
           <ul className="mt-3 flex flex-col gap-2">
             {macs.map((m) => (
@@ -284,7 +284,7 @@ export default function SettingsPage() {
                     setMacs(savedMacs());
                   }}
                 >
-                  Xoá
+                  Delete
                 </button>
               </li>
             ))}

@@ -1,4 +1,4 @@
-/** Chọn cách vẽ khối theo thiết lập: 3D hay trải phẳng. */
+/** Picks how to draw the cube from the settings: 3D or flat net. */
 
 import type { CubeState } from '../cube/cube';
 import { useApp } from '../store/app';
@@ -14,7 +14,7 @@ interface Props {
   quaternion?: Quaternion | null;
   interactive?: boolean;
   animate?: { move: string; progress: number } | null;
-  /** Ép một kiểu hiển thị, bỏ qua thiết lập chung */
+  /** Force one view, ignoring the global setting */
   force?: '3d' | 'net';
 }
 
@@ -22,8 +22,8 @@ export default function CubeView({ size = 180, force, quaternion, interactive, a
   const { settings } = useApp();
   const mode = force ?? settings.cubeView;
   if (mode === 'net') {
-    // Bản trải phẳng cao bằng 3/4 chiều ngang; bù lại để hai kiểu chiếm chỗ tương đương
-    // Bản trải phẳng không vẽ được lớp đang quay nên bỏ qua phần hoạt hình
+    // The net is 3/4 as tall as it is wide, so scale it to take similar space
+    // The net cannot draw a turning layer, so it ignores the animation
     return <CubeNet {...rest} size={size * 1.15} />;
   }
   return <Cube3D {...rest} size={size} quaternion={quaternion} interactive={interactive} animate={animate} />;

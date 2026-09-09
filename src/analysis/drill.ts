@@ -1,10 +1,10 @@
 /**
- * Máy so khớp cho chế độ drill alg.
+ * The matcher behind alg drilling.
  *
- * So khớp theo TRẠNG THÁI chứ không theo tên nước. Lý do: cảm biến báo nước rộng
- * r thành L, báo M thành hai sự kiện R + L', và không thấy các phép xoay khối.
- * So sánh trạng thái theo khoá bất biến-với-phép-quay nên mọi cách thực hiện
- * tương đương đều được chấp nhận.
+ * It matches on STATE, not on move names. The reason: the sensors report a wide
+ * r as L, an M as two events R + L', and see no whole-cube rotations at all.
+ * Comparing states through the rotation-invariant key accepts every equivalent
+ * way of performing the alg.
  */
 
 import { canonicalKey, applyMoves, stateSequence, type CubeState } from '../cube/cube';
@@ -14,13 +14,13 @@ export type DrillEvent = 'progress' | 'complete' | 'off-track' | 'back';
 
 export interface DrillProgress {
   event: DrillEvent;
-  /** Đã khớp tới nước thứ mấy (0 = mới ở trạng thái case) */
+  /** How many moves have matched (0 = still at the case state) */
   index: number;
-  /** Thời điểm khớp từng nước, tính từ nước đầu tiên (ms) */
+  /** When each move matched, measured from the first move (ms) */
   moveTimes: (number | null)[];
 }
 
-/** Trạng thái case = áp dụng nghịch đảo của alg lên khối đã giải. */
+/** The case state is the inverse of the alg applied to a solved cube. */
 export function caseStateFor(alg: string[], base: CubeState): CubeState {
   return applyMoves(base, invertAlg(alg));
 }
@@ -30,11 +30,11 @@ export class DrillMatcher {
   private matchedAt: (number | null)[];
   private index = 0;
   private t0: number | null = null;
-  /** Số nước liên tiếp hiện đang lệch khỏi alg */
+  /** How many consecutive moves are currently off the alg */
   private offTrackRun = 0;
-  /** Lỗi thật sự (đã loại trừ trường hợp nước M bị cảm biến tách làm đôi) */
+  /** Real mistakes, excluding an M turn split in two by the sensors */
   mistakes = 0;
-  /** Tổng số nước lệch, kể cả nửa nước lát cắt */
+  /** All off-alg moves, including slice-move halves */
   extraMoves = 0;
 
   constructor(
@@ -56,10 +56,10 @@ export class DrillMatcher {
     return this.t0;
   }
 
-  /** Nạp trạng thái khối sau mỗi nước. `t` là mốc thời gian tuyệt đối (ms). */
+  /** Feed the cube state after each move. `t` is an absolute timestamp (ms). */
   feed(state: CubeState, t: number): DrillProgress {
     const key = canonicalKey(state);
-    // Ưu tiên khớp tiến để tránh nhầm khi alg có trạng thái lặp
+    // Prefer matching forwards, in case the alg revisits a state
     let found = -1;
     for (let i = this.index + 1; i < this.expectedKeys.length; i++) {
       if (this.expectedKeys[i] === key) {
@@ -81,8 +81,8 @@ export class DrillMatcher {
       }
       this.extraMoves++;
       this.offTrackRun++;
-      // Một nước lệch đơn lẻ thường chỉ là nửa nước lát cắt (cảm biến báo M
-      // thành R rồi L'), chỉ tính là lỗi khi lệch từ hai nước trở lên.
+      // A single off move is usually just half a slice turn (the sensors report
+      // M as R then L'), so only two or more in a row count as a mistake.
       if (this.offTrackRun === 2) this.mistakes++;
       return { event: 'off-track', index: this.index, moveTimes: this.moveTimes() };
     }
@@ -102,13 +102,13 @@ export class DrillMatcher {
   }
 }
 
-/* ---------- Tổng hợp nhiều lần drill ---------- */
+/* ---------- Aggregating many drill reps ---------- */
 
 export interface DrillRepData {
   date: number;
   recognitionMs: number;
   execMs: number;
-  /** Thời điểm hoàn thành từng nước, tính từ nước đầu (ms) */
+  /** When each move completed, measured from the first move (ms) */
   moveTimes: (number | null)[];
   extraMoves: number;
   success: boolean;
@@ -117,13 +117,13 @@ export interface DrillRepData {
 export interface MoveStat {
   index: number;
   move: string;
-  /** Trung vị khoảng thời gian từ nước trước sang nước này (ms) */
+  /** Median gap from the previous move to this one (ms) */
   medianMs: number;
   p25Ms: number;
   p75Ms: number;
   bestMs: number;
   samples: number;
-  /** medianMs chia cho trung vị chung của alg — >1.6 là điểm khựng rõ rệt */
+  /** medianMs over the alg's overall median — above 1.6 is a clear hesitation */
   hesitation: number;
 }
 
@@ -136,7 +136,7 @@ export interface DrillSummary {
   medianRecognitionMs: number;
   tps: number;
   moveStats: MoveStat[];
-  /** Chỉ số các nước đáng luyện lại nhất */
+  /** The moves most worth drilling again */
   worstMoves: MoveStat[];
   trend: { date: number; execMs: number }[];
 }

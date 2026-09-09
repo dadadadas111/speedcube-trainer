@@ -1,6 +1,6 @@
 /**
- * Sinh scramble. Ưu tiên random-state (chuẩn WCA) từ cubing.js nếu tải được,
- * nếu không thì rơi về random-move đủ tốt cho luyện tập.
+ * Scramble generation. Prefers random-state (WCA standard) from cubing.js when
+ * it loads, otherwise falls back to random-move, which is fine for practice.
  */
 
 import { parseAlg } from './alg';
@@ -16,7 +16,7 @@ export function randomMoveScramble(length = 22): string[] {
   while (out.length < length) {
     const face = FACES[Math.floor(Math.random() * 6)];
     if (face === lastFace) continue;
-    // tránh dạng R L R (cùng trục, lặp mặt) vì có thể rút gọn
+    // avoid R L R shapes (same axis, repeated face) since they can be reduced
     if (AXIS[face] === AXIS[lastFace] && face === prevFace) continue;
     prevFace = lastFace;
     lastFace = face;
@@ -28,14 +28,15 @@ export function randomMoveScramble(length = 22): string[] {
 type RandomScrambleFn = (event: string) => Promise<{ toString(): string }>;
 let randomStateFn: RandomScrambleFn | null | undefined;
 
-/** Nạp động; nếu hỏng thì trả null để bên gọi rơi về scramble random-move. */
+/** Loaded dynamically; returns null on failure so the caller falls back. */
 async function tryRandomState(): Promise<string[] | null> {
   try {
     if (randomStateFn === undefined) {
-      // cubing.js thử ba cách tạo worker theo thứ tự. Cách mặc định dựa vào
-      // `import.meta.resolve`, không hợp với bundler. Cách "esbuild" thì import
-      // chính module worker rồi lấy URL nó tự khai báo — đúng thứ bundler xử lý
-      // được, nên bản build mới tìm ra file worker đã bị đổi tên theo hash.
+      // cubing.js tries three ways to spawn its worker, in order. The default
+      // relies on `import.meta.resolve`, which bundlers do not handle. The
+      // "esbuild" route imports the worker module and reads the URL it declares
+      // for itself — exactly what a bundler can rewrite — so the built app finds
+      // the worker file even after it was renamed with a content hash.
       const [mod, search] = await Promise.all([import('cubing/scramble'), import('cubing/search')]);
       search.setSearchDebug({ prioritizeEsbuildWorkaroundForWorkerInstantiation: true });
       randomStateFn = mod.randomScrambleForEvent as unknown as RandomScrambleFn;
@@ -45,7 +46,7 @@ async function tryRandomState(): Promise<string[] | null> {
     const moves = parseAlg(alg.toString());
     return moves.length ? moves : null;
   } catch (err) {
-    console.warn('Không dùng được scramble random-state, tạm dùng random-move.', err);
+    console.warn('Random-state scrambles unavailable, falling back to random-move.', err);
     randomStateFn = null;
     return null;
   }
@@ -56,8 +57,8 @@ export type ScrambleSource = 'random-state' | 'random-move';
 export interface Scramble {
   moves: string[];
   /**
-   * Nguồn thật sự đã dùng. Cần trả về để giao diện nói rõ khi phải dùng hàng
-   * thay thế — trước đây chỗ này rơi về random-move mà không ai biết.
+   * Which generator actually produced this. Returned so the UI can say when it
+   * fell back — this used to degrade to random-move with nobody noticing.
    */
   source: ScrambleSource;
 }

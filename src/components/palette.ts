@@ -1,9 +1,9 @@
-/** Màu sticker cube — cũng chính là hệ màu ngữ nghĩa của toàn app. */
+/** Cube sticker colours, which double as the app's semantic palette. */
 
 export const FACE_COLORS = ['#eef1f5', '#e0384f', '#17b26a', '#ffcf2e', '#ff7a1a', '#2f7ff2'];
-export const FACE_LABELS = ['Trắng', 'Đỏ', 'Xanh lá', 'Vàng', 'Cam', 'Xanh dương'];
+export const FACE_LABELS = ['White', 'Red', 'Green', 'Yellow', 'Orange', 'Blue'];
 
-/** Mỗi bước giải mang một màu mặt cube, giữ nguyên ở mọi biểu đồ và nhãn. */
+/** Each solve step carries one cube-face colour, kept the same everywhere. */
 export const STEP_COLORS: Record<string, string> = {
   // Roux
   FB: '#2f7ff2',

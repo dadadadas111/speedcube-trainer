@@ -1,4 +1,4 @@
-/** Trạng thái dùng chung của app: phiên, thiết lập, trạng thái kết nối cube. */
+/** Shared app state: sessions, settings, and cube connection status. */
 
 import { create } from 'zustand';
 import { db, ensureDefaultSession, getSetting, setSetting, type Session } from './db';
@@ -11,19 +11,19 @@ export interface Settings {
   useInspection: boolean;
   inspectionSeconds: number;
   randomStateScramble: boolean;
-  /** Ngưỡng tối thiểu để tính là một lần dừng tay (ms) */
+  /** Minimum gap that counts as a pause (ms) */
   pauseMinMs: number;
-  /** ...và phải lớn hơn ngần này lần khoảng cách trung vị giữa hai nước */
+  /** ...and it must exceed this multiple of the median gap between moves */
   pauseFactor: number;
-  /** Mục tiêu thời gian trung bình (ms), dùng để định cỡ gợi ý */
+  /** Target average time (ms), used to scale the advice */
   targetMs: number;
-  /** Bắt buộc khối phải khớp scramble mới cho bấm giờ */
+  /** Require the cube to match the scramble before the timer arms */
   requireScrambleMatch: boolean;
-  /** Dùng khối ảo bàn phím thay cho smart cube (để dùng thử / kiểm thử) */
+  /** Use the keyboard cube instead of a smart cube, for trying things out */
   keyboardCube: boolean;
-  /** Kiểu vẽ khối: 3D xoay được, hay trải phẳng thấy đủ 6 mặt */
+  /** How to draw the cube: rotatable 3D, or a flat net showing all 6 faces */
   cubeView: '3d' | 'net';
-  /** Cho khối trên màn hình xoay theo con quay của cube thật */
+  /** Let the on-screen cube follow the real cube's gyroscope */
   useGyro: boolean;
 }
 
@@ -49,7 +49,7 @@ interface AppState {
   cubeStatus: CubeLinkStatus;
   cubeInfo: CubeInfo | null;
   cubeState: CubeState;
-  /** Tăng lên mỗi khi có solve/alg mới, để các trang tự nạp lại */
+  /** Bumped whenever a solve or alg changes, so pages reload themselves */
   revision: number;
 
   init: () => Promise<void>;

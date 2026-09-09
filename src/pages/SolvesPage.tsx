@@ -36,7 +36,7 @@ export default function SolvesPage({ onOpenSolve }: { onOpenSolve: (id: number) 
   };
 
   if (!solves.length) {
-    return <p className="panel p-8 text-center text-sm text-ink-400">Phiên này chưa có solve nào.</p>;
+    return <p className="panel p-8 text-center text-sm text-ink-400">No solves in this session yet.</p>;
   }
 
   return (
@@ -47,18 +47,18 @@ export default function SolvesPage({ onOpenSolve }: { onOpenSolve: (id: number) 
             className={`btn !py-1 !text-[13px] ${sort === 'date' ? '!border-cube-blue !text-cube-blue' : ''}`}
             onClick={() => setSort('date')}
           >
-            Mới nhất
+            Newest
           </button>
           <button
             className={`btn !py-1 !text-[13px] ${sort === 'time' ? '!border-cube-blue !text-cube-blue' : ''}`}
             onClick={() => setSort('time')}
           >
-            Nhanh nhất
+            Fastest
           </button>
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink-300">
           <input type="checkbox" checked={onlyAnalyzed} onChange={(e) => setOnlyAnalyzed(e.target.checked)} />
-          Chỉ hiện solve có dữ liệu từng nước
+          Only solves with move data
         </label>
         <span className="ml-auto text-[13px] text-ink-400">{rows.length} solve</span>
       </div>
@@ -68,12 +68,12 @@ export default function SolvesPage({ onOpenSolve }: { onOpenSolve: (id: number) 
           <thead>
             <tr>
               <th>#</th>
-              <th>Thời gian</th>
-              <th className="w-[34%]">Phân bổ bước</th>
-              <th className="text-right">Nước</th>
+              <th>Time</th>
+              <th className="w-[34%]">Step split</th>
+              <th className="text-right">Moves</th>
               <th className="text-right">TPS</th>
-              <th className="text-right">Đứng yên</th>
-              <th>Lúc</th>
+              <th className="text-right">Pauses</th>
+              <th>At</th>
               <th />
             </tr>
           </thead>
@@ -126,7 +126,7 @@ function Row({
             <StepRibbon steps={a.steps} totalMs={a.totalMs} height={8} />
           </button>
         ) : (
-          <span className="text-[12px] text-ink-500">bấm tay</span>
+          <span className="text-[12px] text-ink-500">hand timed</span>
         )}
       </td>
       <td className="tnum text-right">{a ? a.totalMoves : '—'}</td>
@@ -139,7 +139,7 @@ function Row({
         )}
       </td>
       <td className="whitespace-nowrap text-[13px] text-ink-400">
-        {new Date(solve.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+        {new Date(solve.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
       </td>
       <td>
         <div className="flex justify-end gap-1">
@@ -155,7 +155,7 @@ function Row({
           >
             DNF
           </button>
-          <button className="btn btn-ghost !px-1.5 !py-0.5 !text-[12px] hover:!text-bad" onClick={onRemove} title="Xoá">
+          <button className="btn btn-ghost !px-1.5 !py-0.5 !text-[12px] hover:!text-bad" onClick={onRemove} title="Delete">
             ✕
           </button>
         </div>

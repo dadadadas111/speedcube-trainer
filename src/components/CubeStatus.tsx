@@ -12,8 +12,8 @@ export default function CubeStatus() {
   const [syncOpen, setSyncOpen] = useState(false);
   const asked = useRef(false);
 
-  // Thư viện gọi hàm này khi không tự đọc được MAC. Trả về một Promise để chờ
-  // người dùng điền vào hộp thoại, thay cho window.prompt trần.
+  // The library calls this when it cannot read the MAC itself. It returns a
+  // promise that waits for the dialog, instead of a bare window.prompt.
   useEffect(() => {
     cubeLink.askForMac = (deviceName) =>
       new Promise<string | null>((resolve) => {
@@ -25,8 +25,8 @@ export default function CubeStatus() {
     };
   }, []);
 
-  // Giải mã ra rác thì gần như chắc chắn MAC sai — nói thẳng thay vì để người
-  // dùng ngồi đoán tại sao khối trên màn hình loạn xạ.
+  // Garbled data almost certainly means a wrong MAC — say so, rather than
+  // leaving the user to wonder why the on-screen cube is nonsense.
   useEffect(() => cubeLink.on({ garbled: () => setGarbled(true) }), []);
 
   const connect = async () => {
@@ -39,7 +39,7 @@ export default function CubeStatus() {
       if (/cancel|User cancelled/i.test(msg)) return;
       setError(
         /MAC address/i.test(msg)
-          ? 'Chưa có địa chỉ MAC nên không giải mã được dữ liệu cube.'
+          ? 'Without a MAC address the cube data cannot be decrypted.'
           : msg,
       );
     }
@@ -55,7 +55,7 @@ export default function CubeStatus() {
   return (
     <div className="flex flex-wrap items-center gap-3">
       {settings.keyboardCube && (
-        <span className="rounded-full border border-ink-600 px-2 py-0.5 text-[12px] text-ink-300">khối ảo</span>
+        <span className="rounded-full border border-ink-600 px-2 py-0.5 text-[12px] text-ink-300">virtual cube</span>
       )}
       {cubeStatus === 'connected' ? (
         <>
@@ -69,18 +69,18 @@ export default function CubeStatus() {
               className="btn btn-ghost !px-2 !py-1 !text-[13px]"
               onClick={() => setSyncOpen((v) => !v)}
               aria-expanded={syncOpen}
-              title="App hiển thị khác khối thật?"
+              title="App showing something different from your cube?"
             >
-              Đồng bộ
+              Sync
             </button>
             {syncOpen && (
-              // Để ở thanh trên cùng nên chỗ nào trong app cũng với tới được,
-              // không phải quay về trang bấm giờ mới chữa được lệch trạng thái.
+              // Living in the top bar means it is reachable from anywhere in the
+              // app, not only from the timer page.
               <div className="panel absolute right-0 z-50 mt-2 w-[min(92vw,26rem)] p-4">
                 <div className="mb-2 flex items-baseline justify-between">
-                  <h3 className="text-sm font-semibold">Đồng bộ với khối thật</h3>
+                  <h3 className="text-sm font-semibold">Sync with the real cube</h3>
                   <button className="btn btn-ghost !px-1.5 !py-0 !text-[13px]" onClick={() => setSyncOpen(false)}>
-                    Đóng
+                    Close
                   </button>
                 </div>
                 <CubeSync />
@@ -88,19 +88,19 @@ export default function CubeStatus() {
             )}
           </div>
           <button className="btn btn-ghost !px-2 !py-1 !text-[13px]" onClick={() => void cubeLink.disconnect()}>
-            Ngắt
+            Disconnect
           </button>
         </>
       ) : (
         <button className="btn !py-1 !text-[13px]" onClick={() => void connect()} disabled={cubeStatus === 'connecting'}>
           <span className="size-2 rounded-full" style={{ background: dot }} />
-          {cubeStatus === 'connecting' ? 'Đang kết nối…' : 'Kết nối smart cube'}
+          {cubeStatus === 'connecting' ? 'Connecting…' : 'Connect smart cube'}
         </button>
       )}
 
       {garbled && (
         <span className="max-w-[34ch] text-[12px] text-bad">
-          Dữ liệu đọc về là rác — địa chỉ MAC sai. Vào Cài đặt xoá MAC đã lưu rồi kết nối lại.
+          The data read back is garbage — the MAC is wrong. Delete the saved MAC in Settings and reconnect.
         </span>
       )}
       {error && <span className="max-w-[30ch] text-[12px] text-bad">{error}</span>}

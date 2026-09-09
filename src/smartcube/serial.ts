@@ -1,20 +1,20 @@
 /**
- * So sánh số thứ tự gói tin của cube.
+ * Comparing the cube's packet serial numbers.
  *
- * Cube đánh số mỗi lần trạng thái đổi, chạy vòng theo modulo 256. Ảnh chụp
- * trạng thái mà cube đẩy về theo chu kỳ có thể TỚI SAU vài nước mới nhưng lại mô
- * tả trạng thái CŨ hơn — ghi đè bừa là kéo lùi trạng thái của app, khiến lúc
- * giải xong app không nhận ra là đã xong.
+ * The cube numbers every state change, wrapping modulo 256. A state snapshot it
+ * pushes periodically can ARRIVE AFTER newer moves while describing an OLDER
+ * state — overwriting blindly drags the app's state backwards, which is why the
+ * timer once failed to notice a finished solve.
  *
- * Tách riêng khỏi module bluetooth để test chạy được ngoài trình duyệt.
+ * Kept out of the bluetooth module so the tests run outside a browser.
  */
 
-/** Nửa vòng: quá khoảng này thì coi như đã chạy vòng ngược về quá khứ. */
+/** Half the range: beyond this we treat it as having wrapped into the past. */
 const HALF = 128;
 
 /**
- * `candidate` có mới bằng hoặc mới hơn `last` không.
- * `last` là null nghĩa là chưa có mốc nào, chấp nhận tất.
+ * Is `candidate` as new as, or newer than, `last`?
+ * A null `last` means there is no marker yet, so everything is accepted.
  */
 export function isFreshSerial(candidate: number, last: number | null): boolean {
   if (last === null) return true;

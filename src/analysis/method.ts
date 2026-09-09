@@ -1,24 +1,25 @@
 /**
- * Phát hiện các bước giải từ dòng nước.
+ * Detecting solve steps from the move stream.
  *
- * Điểm mấu chốt: mọi điều kiện đều được kiểm tra trên CẢ 24 hướng cầm khối
- * ("tồn tại một hướng sao cho..."). Nhờ vậy điều kiện bất biến với phép quay
- * toàn khối — cần thiết vì smart cube không phân biệt được r với L, nên hệ quy
- * chiếu của mô hình có thể lệch dần so với thực tế trong lúc giải.
+ * The key idea: every condition is tested against ALL 24 cube orientations
+ * ("there exists an orientation such that..."). That makes each condition
+ * invariant under whole-cube rotation — necessary because a smart cube cannot
+ * tell r from L, so the model's frame can drift from reality mid-solve.
  */
 
-import { type CubeState, PIECES, PIECE_GROUPS, F2L_SLOTS, LSE_UD_FACELETS, U_CENTER_FACELET, groupSolved, isSolved, piecesByColor } from '../cube/cube';
+import { type CubeState, PIECES, PIECE_GROUPS, F2L_SLOTS, LSE_UD_FACELETS, U_CENTER_FACELET, COLOR_FRAMES, IDENTITY_COLORS, recolor, groupSolved, isSolved, piecesByColor } from '../cube/cube';
 import { ROTATIONS, MOVE_PERMS, composePerm, IDENTITY_PERM } from '../cube/geometry';
 
 /**
- * 24 hướng cầm khối, nhân thêm 4 vị trí xoay của lớp U.
+ * The 24 orientations, multiplied by the 4 positions of the U layer.
  *
- * Cần cho các bước LSE: lúc đó người giải xoay lớp U liên tục, nên bốn góc tuy
- * đã giải xong về mặt CMLL nhưng hiếm khi đang nằm đúng vị trí cuối cùng. Nếu
- * đòi đúng cả AUF thì EO và 4b gần như không bao giờ khớp cho tới khi giải hết,
- * và toàn bộ LSE bị dồn thành một cục.
+ * Needed for the LSE steps: the solver spins the U layer constantly there, so
+ * although the four corners are done as far as CMLL is concerned, they are
+ * rarely sitting in their final position. Demanding the AUF be right too means
+ * EO and 4b almost never match until the cube is fully solved, and the whole of
+ * LSE collapses into one lump.
  *
- * Xoay lớp U không đụng tới hai khối nên dùng bộ này cho các bước đó vẫn an toàn.
+ * Turning the U layer never touches either block, so this set is safe here.
  */
 export const ROTATIONS_WITH_AUF: Uint8Array[] = (() => {
   const out: Uint8Array[] = [];
@@ -26,8 +27,8 @@ export const ROTATIONS_WITH_AUF: Uint8Array[] = (() => {
   for (const rot of ROTATIONS) {
     let u: Uint8Array = IDENTITY_PERM as Uint8Array;
     for (let k = 0; k < 4; k++) {
-      // Soi qua hướng cầm khối TRƯỚC, rồi mới xoay lớp U — ngược thứ tự thì
-      // hoá ra đang xoay lớp U của hệ quy chiếu thô chứ không phải của người giải.
+      // View through the orientation FIRST, then apply the U turn — the other
+      // order turns the U layer of the raw frame, not the solver's.
       const p = composePerm(rot, u);
       const key = p.join(',');
       if (!seen.has(key)) {
@@ -45,12 +46,12 @@ export type MethodName = 'roux' | 'cfop';
 export interface StageSpec {
   key: string;
   label: string;
-  /** Mô tả ngắn để hiện trong phần đánh giá */
+  /** Short description shown in the review */
   hint: string;
   test: (s: CubeState, rot: Uint8Array) => boolean;
   /**
-   * Cho phép lớp U đang ở vị trí xoay bất kỳ. Bật cho các bước LSE, vì lúc đó
-   * lớp U xoay liên tục nhưng bốn góc vẫn coi như đã xong.
+   * Accept any rotation of the U layer. Enabled for the LSE steps, where the U
+   * layer spins constantly but the four corners still count as done.
    */
   allowAuf?: boolean;
 }
@@ -65,18 +66,18 @@ const facesUD = (s: CubeState, rot: Uint8Array, f: number) => {
 };
 
 /**
- * EO xong: cả 6 cạnh LSE đúng chiều (mặt màu U/D nằm trên mặt U hoặc D) và lát
- * M đang thẳng hàng (tâm U nằm ở mặt U hoặc mặt D).
+ * EO done: all 6 LSE edges are oriented (their U/D colour faces U or D) and the
+ * M slice is aligned (the U centre sits on the U or D face).
  *
- * Lý do phải có điều kiện thẳng hàng: tập "EO xong" bắt buộc phải bất biến dưới
- * nhóm nước của bước 4b là ⟨M2, U⟩ — làm xong 4a rồi thì cả bước 4b không được
- * phá EO. Điều kiện này bất biến đúng như vậy (U giữ nguyên chiều từng cạnh, M2
- * giữ cả chiều lẫn tính chẵn của lát giữa).
+ * Why alignment must be part of it: the "EO done" set has to be invariant under
+ * ⟨M2, U⟩, the move group of step 4b — once 4a is finished, doing 4b must not
+ * break EO. This condition is exactly that invariant (U preserves each edge's
+ * orientation, M2 preserves both orientation and slice parity).
  *
- * Một tiêu chí nới hơn kiểu "chấp nhận cả khi lát M lệch 90 độ" thì KHÔNG bất
- * biến dưới U: một nước U sẽ trộn cạnh của lát M với cạnh UL/UR, tạo ra trạng
- * thái nửa đúng nửa sai. Đã kiểm tra bằng cách duyệt toàn bộ 184320 trạng thái
- * của nhóm ⟨M, U⟩ (xem test).
+ * A looser rule such as "also accept a slice that is 90 degrees off" is NOT
+ * invariant under U: a single U turn mixes M-slice edges with the UL/UR edges,
+ * producing a half-right state. Verified by walking all 184320 states of the
+ * ⟨M, U⟩ group (see the tests).
  */
 export const rouxEdgesOriented = (s: CubeState, rot: Uint8Array) => {
   if (!facesUD(s, rot, U_CENTER_FACELET)) return false;
@@ -86,17 +87,17 @@ export const rouxEdgesOriented = (s: CubeState, rot: Uint8Array) => {
 
 const rouxEO = (s: CubeState, rot: Uint8Array) => rouxCMLL(s, rot) && rouxEdgesOriented(s, rot);
 
-/** 4b xong: chỉ còn lát M chưa xong (UL/UR đã vào chỗ). */
+/** 4b done: only the M slice is left (UL/UR are in place). */
 const rouxLR = (s: CubeState, rot: Uint8Array) =>
   rouxCMLL(s, rot) && groupSolved(s, rot, PIECES.UL_UR);
 
 export const ROUX_STAGES: StageSpec[] = [
-  { key: 'FB', label: 'First Block', hint: 'Khối 1x2x3 bên trái — chủ yếu là nhìn trước và lập kế hoạch', test: rouxFB },
-  { key: 'SB', label: 'Second Block', hint: 'Khối 1x2x3 bên phải — nhìn trước + hiệu quả r/M', test: rouxSB },
-  { key: 'CMLL', label: 'CMLL', hint: 'Xoay + hoán vị 4 góc lớp trên — nhận dạng + thuộc alg', test: rouxCMLL },
-  { key: 'EO', label: 'LSE 4a (EO)', hint: 'Chỉnh chiều 6 cạnh còn lại', test: rouxEO, allowAuf: true },
-  { key: 'LR', label: 'LSE 4b (UL/UR)', hint: 'Đưa hai cạnh UL, UR về chỗ', test: rouxLR, allowAuf: true },
-  { key: 'L4C', label: 'LSE 4c (lát M)', hint: 'Hoàn tất lát giữa', test: (s) => isSolved(s) },
+  { key: 'FB', label: 'First Block', hint: 'The left 1x2x3 block — mostly planning and lookahead', test: rouxFB },
+  { key: 'SB', label: 'Second Block', hint: 'The right 1x2x3 block — lookahead plus efficient r/M', test: rouxSB },
+  { key: 'CMLL', label: 'CMLL', hint: 'Orient and permute the 4 top corners — recognition plus algs', test: rouxCMLL },
+  { key: 'EO', label: 'LSE 4a (EO)', hint: 'Orient the remaining 6 edges', test: rouxEO, allowAuf: true },
+  { key: 'LR', label: 'LSE 4b (UL/UR)', hint: 'Place the UL and UR edges', test: rouxLR, allowAuf: true },
+  { key: 'L4C', label: 'LSE 4c (M slice)', hint: 'Finish the middle slice', test: (s) => isSolved(s) },
 ];
 
 const cfopCross = (s: CubeState, rot: Uint8Array) => groupSolved(s, rot, PIECES.CROSS);
@@ -110,13 +111,13 @@ const cfopOLL = (s: CubeState, rot: Uint8Array) => {
 };
 
 export const CFOP_STAGES: StageSpec[] = [
-  { key: 'CROSS', label: 'Cross', hint: 'Nên giải xong trong ~8 nước và nhìn trước được cặp F2L đầu', test: cfopCross },
+  { key: 'CROSS', label: 'Cross', hint: 'Should take ~8 moves, with the first F2L pair already spotted', test: cfopCross },
   { key: 'F2L1', label: 'F2L #1', hint: '', test: cfopF2L(1) },
   { key: 'F2L2', label: 'F2L #2', hint: '', test: cfopF2L(2) },
   { key: 'F2L3', label: 'F2L #3', hint: '', test: cfopF2L(3) },
-  { key: 'F2L4', label: 'F2L #4', hint: 'Nhìn trước là chính, đừng dừng giữa các cặp', test: cfopF2L(4) },
-  { key: 'OLL', label: 'OLL', hint: 'Nhận dạng + thuộc alg', test: cfopOLL },
-  { key: 'PLL', label: 'PLL', hint: 'Nhận dạng + thuộc alg', test: (s) => isSolved(s) },
+  { key: 'F2L4', label: 'F2L #4', hint: 'Lookahead is everything — do not pause between pairs', test: cfopF2L(4) },
+  { key: 'OLL', label: 'OLL', hint: 'Recognition plus algs', test: cfopOLL },
+  { key: 'PLL', label: 'PLL', hint: 'Recognition plus algs', test: (s) => isSolved(s) },
 ];
 
 export function stagesFor(method: MethodName): StageSpec[] {
@@ -127,17 +128,18 @@ export interface StageDetection {
   key: string;
   label: string;
   hint: string;
-  /** Số nước đã thực hiện khi bước này xong; -1 nếu không phát hiện được */
+  /** Move count at which this step finished; -1 if it was never detected */
   endIndex: number;
-  /** Hướng cầm khối tìm được (dùng để hiển thị), null nếu không có */
+  /** The orientation that matched, used for display; null if none */
   rotation: Uint8Array | null;
 }
 
 /**
- * Quét tiến, đơn điệu: bước sau không thể xong trước bước trước.
- * Với mỗi bước lấy thời điểm SỚM NHẤT thoả mãn kể từ khi bước trước xong.
+ * A forward, monotone scan: a later step cannot finish before an earlier one.
+ * For each step we take the EARLIEST moment it holds after the previous one.
  */
-export function detectStages(states: CubeState[], specs: StageSpec[]): StageDetection[] {
+export function detectStages(states: CubeState[], specs: StageSpec[], colors?: Uint8Array): StageDetection[] {
+  if (colors && colors !== IDENTITY_COLORS) states = states.map((s) => recolor(s, colors));
   const out: StageDetection[] = [];
   let from = 0;
   for (const spec of specs) {
@@ -155,7 +157,7 @@ export function detectStages(states: CubeState[], specs: StageSpec[]): StageDete
     }
     out.push({ key: spec.key, label: spec.label, hint: spec.hint, endIndex: found, rotation });
     if (found < 0) {
-      // Không phát hiện được -> các bước sau cũng bỏ trống
+      // Not detected -> leave the remaining steps blank too
       from = states.length;
     } else {
       from = found;
@@ -164,24 +166,71 @@ export function detectStages(states: CubeState[], specs: StageSpec[]): StageDete
   return out;
 }
 
+export interface StageScan {
+  detections: StageDetection[];
+  /** The colour scheme the solve was read in; needed to highlight the right pieces */
+  colors: Uint8Array;
+}
+
 /**
- * Đoán phương pháp khi người dùng để "tự động": chọn phương pháp mà bước đầu
- * tiên hoàn thành sớm nhất theo tỷ lệ số nước.
+ * How well one reading of the solve holds together.
+ *
+ * A wrong colour scheme does not fail loudly — it simply finds nothing until
+ * the cube is finished, and then every step lands on the last move at once. So
+ * the score counts DISTINCT boundaries first: the right scheme spreads the six
+ * steps out, a wrong one piles them up at the end.
+ */
+function scanScore(det: StageDetection[]): number {
+  const idx = det.map((d) => d.endIndex).filter((i) => i >= 0);
+  if (!idx.length) return -1;
+  const distinct = new Set(idx).size;
+  // Tie-break towards the reading whose first step finishes earliest: with two
+  // schemes that both hold together, that is the one where the block the solver
+  // built first is being read as the first block.
+  return idx.length * 10000 + distinct * 100 - Math.min(99, idx[0]);
+}
+
+/**
+ * Detect the steps without being told the solver's colour scheme.
+ *
+ * Tries each of the 24 colour relabellings and keeps the reading that holds
+ * together best. The first step is scanned alone as a filter, because it is
+ * cheap and rules out most schemes immediately.
+ */
+export function scanStages(states: CubeState[], specs: StageSpec[]): StageScan {
+  let best: StageScan | null = null;
+  let bestScore = -Infinity;
+  for (const colors of COLOR_FRAMES) {
+    // Cheap filter: no first step under this scheme means no reading at all
+    if (specs.length > 1 && detectStages(states, [specs[0]], colors)[0].endIndex < 0) continue;
+    const detections = detectStages(states, specs, colors);
+    const score = scanScore(detections);
+    if (score > bestScore) {
+      bestScore = score;
+      best = { detections, colors };
+    }
+  }
+  return best ?? { detections: detectStages(states, specs), colors: IDENTITY_COLORS };
+}
+
+/**
+ * Guess the method when the user leaves it on "auto": pick whichever method's
+ * first step completes earliest as a fraction of the move count.
  */
 export function guessMethod(states: CubeState[]): MethodName {
   const n = Math.max(1, states.length - 1);
-  const rouxFirst = detectStages(states, [ROUX_STAGES[0]])[0].endIndex;
-  const cfopFirst = detectStages(states, [CFOP_STAGES[0]])[0].endIndex;
+  const rouxFirst = scanStages(states, [ROUX_STAGES[0]]).detections[0].endIndex;
+  const cfopFirst = scanStages(states, [CFOP_STAGES[0]]).detections[0].endIndex;
   if (rouxFirst < 0) return 'cfop';
   if (cfopFirst < 0) return 'roux';
-  // Cross thường xong rất sớm ở CFOP; FB của Roux thường tốn nhiều nước hơn.
+  // A CFOP cross finishes very early; a Roux first block usually costs more moves.
   return rouxFirst / n <= cfopFirst / n ? 'roux' : 'cfop';
 }
 
 /**
- * Những miếng mà một bước chịu trách nhiệm, tìm theo màu trên trạng thái đang
- * hiển thị — nhờ vậy lúc xem lại bạn thấy chính các miếng đó sáng lên dù chúng
- * còn đang nằm rải rác, rồi theo dõi chúng dồn về chỗ.
+ * The pieces a step is responsible for, located by colour in the state being
+ * displayed — so during replay you see those very pieces light up even while
+ * they are still scattered, and watch them come together.
  */
 export function stepPieceGroups(key: string): number[][] {
   switch (key) {
@@ -200,8 +249,12 @@ export function stepPieceGroups(key: string): number[][] {
   }
 }
 
-/** Facelet cần tô sáng cho một bước, dựa trên trạng thái đang hiển thị. */
-export function stepHighlight(key: string, viewed: CubeState): number[] {
+/** Facelets to highlight for a step, based on the state being displayed. */
+export function stepHighlight(key: string, viewed: CubeState, colors?: Uint8Array): number[] {
   const groups = stepPieceGroups(key);
-  return groups.length ? piecesByColor(groups, viewed) : [];
+  if (!groups.length) return [];
+  // The pieces are found by colour, so they have to be read in the same scheme
+  // the steps were detected in. Positions are untouched, so the facelet indices
+  // this returns still point at the right squares on screen.
+  return piecesByColor(groups, colors && colors !== IDENTITY_COLORS ? recolor(viewed, colors) : viewed);
 }

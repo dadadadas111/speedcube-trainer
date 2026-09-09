@@ -1,4 +1,4 @@
-/** Đọc / ghi / biến đổi ký hiệu thuật toán. */
+/** Parsing, formatting and transforming algorithm notation. */
 
 import { MOVE_PERMS } from './geometry';
 
@@ -9,7 +9,7 @@ const ALIASES: Record<string, string> = {
 
 const TOKEN_RE = /^(3?[URFDLBMESxyz]w?|[rludfb])(2'?|'|)$/;
 
-/** Tách chuỗi thành danh sách nước hợp lệ. Ném lỗi nếu gặp token lạ. */
+/** Split a string into valid moves. Throws on an unrecognised token. */
 export function parseAlg(text: string): string[] {
   const raw = text
     .replace(/[（(].*?[）)]/g, ' ')
@@ -21,13 +21,13 @@ export function parseAlg(text: string): string[] {
   const out: string[] = [];
   for (const tok of raw.split(/\s+/)) {
     const m = TOKEN_RE.exec(tok);
-    if (!m) throw new Error(`Không hiểu nước "${tok}"`);
+    if (!m) throw new Error(`Unrecognised move "${tok}"`);
     let base = m[1];
     base = ALIASES[base] ?? base;
     if (base.startsWith('3')) base = ALIASES[base] ?? base.slice(1);
     const suffix = m[2] === "2'" ? '2' : m[2];
     const move = base + suffix;
-    if (!MOVE_PERMS[move]) throw new Error(`Không hiểu nước "${tok}"`);
+    if (!MOVE_PERMS[move]) throw new Error(`Unrecognised move "${tok}"`);
     out.push(move);
   }
   return out;
@@ -56,12 +56,12 @@ export function invertAlg(moves: string[]): string[] {
   return [...moves].reverse().map(invertMove);
 }
 
-/** Mặt (chữ cái đầu) của nước, dùng để phát hiện nước cùng mặt. */
+/** The move's face (first letter), used to spot consecutive same-face turns. */
 export function moveFace(move: string): string {
   return move[0];
 }
 
-/** Trục quay của nước: 0 = x (R/L/M/r/l/x), 1 = y (U/D/E/u/d/y), 2 = z (F/B/S/f/b/z) */
+/** The move's axis: 0 = x (R/L/M/r/l/x), 1 = y (U/D/E/u/d/y), 2 = z (F/B/S/f/b/z) */
 export function moveAxis(move: string): number {
   const f = move[0];
   if ('RLMrlx'.includes(f)) return 0;
@@ -81,7 +81,7 @@ export function makeMove(face: string, amount: number): string {
   return face + (a === 1 ? '' : a === 2 ? '2' : "'");
 }
 
-/** Rút gọn chuỗi: gộp nước liền kề cùng mặt, bỏ nước triệt tiêu. */
+/** Simplify a sequence: merge adjacent same-face turns, drop cancellations. */
 export function simplifyAlg(moves: string[]): string[] {
   const out: string[] = [];
   for (const m of moves) {

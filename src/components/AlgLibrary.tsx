@@ -1,8 +1,8 @@
 /**
- * Thư viện alg hai tầng: bấm vào họ (Sune, EOLR...) rồi mới chọn case bên trong.
+ * A two-level alg library: open a family (Sune, EOLR, ...) then pick a case.
  *
- * Danh sách phẳng không dùng nổi khi có hàng trăm alg, nên ở đây có thêm ô tìm
- * kiếm và số case đã luyện của từng họ để biết chỗ nào còn bỏ trống.
+ * A flat list is unusable once you have hundreds of algs, so there is a search
+ * box and a per-family count of how many cases you have drilled.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -10,7 +10,7 @@ import type { AlgEntry } from '../store/db';
 
 interface Props {
   algs: AlgEntry[];
-  /** algId -> số lần đã drill */
+  /** algId -> number of drill reps */
   repCounts: Map<number, number>;
   selectedId: number | null;
   onSelect: (id: number) => void;
@@ -56,7 +56,7 @@ export default function AlgLibrary({ algs, repCounts, selectedId, onSelect, onAd
     return [...map.entries()];
   }, [families]);
 
-  // Luôn mở sẵn họ đang chứa alg được chọn
+  // Always keep the family holding the selected alg open
   const selectedKey = useMemo(() => {
     const sel = algs.find((a) => a.id === selectedId);
     return sel ? sel.group + ' / ' + sel.family : null;
@@ -66,7 +66,7 @@ export default function AlgLibrary({ algs, repCounts, selectedId, onSelect, onAd
     if (selectedKey) setOpen((o) => (o.has(selectedKey) ? o : new Set(o).add(selectedKey)));
   }, [selectedKey]);
 
-  // Đang tìm kiếm thì mở hết cho thấy kết quả
+  // While searching, open everything so results are visible
   const isOpen = (key: string) => q !== '' || open.has(key);
   const toggle = (key: string) =>
     setOpen((o) => {
@@ -79,25 +79,25 @@ export default function AlgLibrary({ algs, repCounts, selectedId, onSelect, onAd
   return (
     <aside className="panel flex max-h-[55vh] flex-col overflow-hidden lg:max-h-[calc(100vh-8rem)]">
       <header className="flex items-center justify-between gap-2 border-b border-ink-700 px-3 py-2.5">
-        <h2 className="text-sm font-semibold">Thư viện alg</h2>
+        <h2 className="text-sm font-semibold">Alg library</h2>
         <button className="btn btn-ghost !px-2 !py-0.5 !text-[13px]" onClick={onAdd}>
-          Thêm
+          Add
         </button>
       </header>
 
       <div className="border-b border-ink-700 px-3 py-2">
         <input
           className="input !py-1 !text-[13px]"
-          placeholder="Tìm theo họ, case hay ký hiệu..."
+          placeholder="Search family, case or notation..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          aria-label="Tìm alg"
+          aria-label="Search algs"
         />
       </div>
 
       <div className="overflow-y-auto py-1">
         {groups.length === 0 && (
-          <p className="px-3 py-6 text-[13px] text-ink-400">Không có alg nào khớp.</p>
+          <p className="px-3 py-6 text-[13px] text-ink-400">No algs match.</p>
         )}
         {groups.map(([group, fams]) => (
           <div key={group} className="mb-1">
@@ -123,7 +123,7 @@ export default function AlgLibrary({ algs, repCounts, selectedId, onSelect, onAd
                     {!single && (
                       <span
                         className="tnum shrink-0 text-[11px] text-ink-500"
-                        title={f.practiced + '/' + f.items.length + ' case đã luyện'}
+                        title={f.practiced + '/' + f.items.length + ' cases drilled'}
                       >
                         {f.practiced}/{f.items.length}
                       </span>
@@ -142,7 +142,7 @@ export default function AlgLibrary({ algs, repCounts, selectedId, onSelect, onAd
                         >
                           <span className="min-w-0 flex-1 truncate">{a.name}</span>
                           {a.id && (repCounts.get(a.id) ?? 0) === 0 && (
-                            <span aria-hidden="true" title="Chưa luyện lần nào" className="size-1.5 shrink-0 rounded-full bg-ink-500" />
+                            <span aria-hidden="true" title="Never drilled" className="size-1.5 shrink-0 rounded-full bg-ink-500" />
                           )}
                         </button>
                       ))}

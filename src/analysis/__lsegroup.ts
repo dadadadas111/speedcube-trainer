@@ -1,7 +1,8 @@
 /**
- * Duyệt toàn bộ nhóm LSE ⟨M, U⟩ để trả lời: "cả 6 cạnh đúng chiều" có kéo theo
- * "lát M đang thẳng hàng" không? Nếu có thì điều kiện thẳng hàng trong bộ nhận
- * dạng EO là thừa và nên bỏ đi (vì nó có thể đẩy biên EO muộn hơn thực tế).
+ * Walks the whole LSE group ⟨M, U⟩ to answer one question: does "all 6 edges
+ * oriented" already imply "the M slice is aligned"? If it does, the alignment
+ * clause in the EO detector is redundant and should go (it could push the EO
+ * boundary later than it really is).
  */
 import { SOLVED_STATE, applyMove, toKociemba, LSE_UD_FACELETS, U_CENTER_FACELET } from '../cube/cube';
 
@@ -32,9 +33,9 @@ while (frontier.length) {
   depth++;
   if (depth > 40) break;
 }
-console.log('tổng số trạng thái LSE:', seen.size);
-console.log('trạng thái "6 cạnh đúng chiều":', goodTotal);
-console.log('trong đó lát M lệch:', goodAndMisaligned);
+console.log('total LSE states:', seen.size);
+console.log('states with all 6 edges oriented:', goodTotal);
+console.log('of those, M slice misaligned:', goodAndMisaligned);
 console.log(goodAndMisaligned === 0
-  ? '=> Điều kiện thẳng hàng là THỪA: đúng chiều đã kéo theo thẳng hàng.'
-  : '=> Điều kiện thẳng hàng CÓ ích: tồn tại trạng thái đúng chiều mà lát M lệch.');
+  ? '=> The alignment clause is REDUNDANT: orientation already implies alignment.'
+  : '=> The alignment clause EARNS its place: there are oriented states with the M slice off.');

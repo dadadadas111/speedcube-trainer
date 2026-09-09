@@ -1,13 +1,13 @@
 /**
- * Hiển thị scramble kèm chỉ dẫn: đã vặn tới đâu, nước tiếp theo là gì,
- * và nếu vặn sai thì cần vặn ngược lại những gì.
+ * The scramble with guidance: how far you have got, what comes next, and what
+ * to undo if you turned the wrong way.
  */
 
 import type { ScrambleProgress } from '../analysis/scrambleGuide';
 
 interface Props {
   moves: string[];
-  /** null khi không có smart cube — khi đó chỉ hiện scramble, không dẫn */
+  /** null without a smart cube, in which case the scramble shows unguided */
   progress: ScrambleProgress | null;
 }
 
@@ -26,8 +26,8 @@ export default function ScrambleGuide({ moves, progress }: Props) {
         {moves.map((m, i) => {
           const isDone = progress ? i < done : false;
           const isNext = progress ? i === done && !lost && !complete : false;
-          // Đang vặn dở nước hiện tại thì tô vàng chứ không đỏ — cube báo một
-          // nước 180 độ thành hai sự kiện nên nửa chừng là chuyện bình thường.
+          // Partway through the current move goes amber, not red — a cube reports
+          // a half turn as two events, so being mid-turn is perfectly normal.
           const bg = isNext ? (partial ? 'var(--color-warn)' : 'var(--color-cube-blue)') : 'transparent';
           return (
             <span
@@ -72,15 +72,15 @@ export default function ScrambleGuide({ moves, progress }: Props) {
   );
 }
 
-/** Câu chỉ dẫn tương ứng với tình trạng hiện tại. */
+/** The guidance line for the current situation. */
 export function ScrambleHint({ progress, notReady }: { progress: ScrambleProgress | null; notReady: boolean }) {
   if (notReady) {
     return (
       <div>
-        <p className="text-[15px] font-semibold text-warn">Khối chưa ở trạng thái đã giải</p>
+        <p className="text-[15px] font-semibold text-warn">The cube is not solved</p>
         <p className="mt-1 max-w-[52ch] text-sm text-ink-300">
-          Scramble được tính từ khối đã giải. Hãy giải xong khối trước. Nếu khối trong tay bạn đã giải rồi mà
-          app vẫn báo thế này thì hai bên đang lệch — dùng nút bên dưới.
+          Scrambles start from a solved cube, so solve it first. If the cube in your hands is already solved and
+          the app still says this, the two are out of sync — use the buttons below.
         </p>
       </div>
     );
@@ -88,21 +88,21 @@ export function ScrambleHint({ progress, notReady }: { progress: ScrambleProgres
   if (!progress) {
     return (
       <p className="text-sm text-ink-300">
-        Kết nối smart cube để app dẫn bạn vặn scramble và bắt lỗi từng nước.
+        Connect a smart cube and the app will guide you through the scramble, catching every wrong turn.
       </p>
     );
   }
   if (progress.status === 'complete') {
-    return <p className="armed text-lg font-semibold text-good">Scramble xong — vặn nước đầu là đồng hồ chạy</p>;
+    return <p className="armed text-lg font-semibold text-good">Scramble done — the first turn starts the timer</p>;
   }
   if (progress.status === 'partial') {
     return (
       <div>
-        <p className="text-[13px] text-ink-400">Đang vặn dở</p>
+        <p className="text-[13px] text-ink-400">Mid-turn</p>
         <p className="font-mono text-4xl font-semibold leading-none text-warn">{progress.remaining}</p>
         <p className="mt-2 max-w-[46ch] text-[13px] text-ink-400">
-          Vặn nốt cho đủ nước <span className="font-mono text-ink-200">{progress.next}</span>. Cube báo nước 180
-          độ thành hai nhịp nên nửa chừng là bình thường.
+          Finish the turn to complete <span className="font-mono text-ink-200">{progress.next}</span>. A cube
+          reports a half turn as two beats, so being mid-turn is normal.
         </p>
       </div>
     );
@@ -111,21 +111,21 @@ export function ScrambleHint({ progress, notReady }: { progress: ScrambleProgres
     return (
       <div>
         <p className="text-[15px] font-semibold text-bad">
-          Vặn sai {progress.wrongMoves > 1 ? `${progress.wrongMoves} nước` : 'rồi'}
+          Wrong turn{progress.wrongMoves > 1 ? `s — ${progress.wrongMoves} of them` : ''}
         </p>
         {progress.fix.length > 0 ? (
           <>
             <p className="mt-1 text-sm text-ink-300">
               {progress.done === 0
-                ? 'Vặn ngược lại để về khối đã giải:'
-                : `Vặn ngược lại để quay về nước thứ ${progress.done}:`}
+                ? 'Undo this to get back to a solved cube:'
+                : `Undo this to get back to move ${progress.done}:`}
             </p>
             <p className="mt-1.5 font-mono text-xl text-bad">{progress.fix.join(' ')}</p>
           </>
         ) : (
           <p className="mt-1 max-w-[52ch] text-sm text-ink-300">
-            App không biết bạn đã vặn gì (có thể vừa mất kết nối). Giải khối về trạng thái đã giải rồi vặn lại
-            từ đầu, hoặc đổi scramble khác.
+            The app does not know what you turned — the connection may have dropped. Solve the cube and start
+            the scramble again, or pick a different one.
           </p>
         )}
       </div>
@@ -133,10 +133,10 @@ export function ScrambleHint({ progress, notReady }: { progress: ScrambleProgres
   }
   return (
     <div>
-      <p className="text-[13px] text-ink-400">Nước tiếp theo</p>
+      <p className="text-[13px] text-ink-400">Next move</p>
       <p className="font-mono text-4xl font-semibold leading-none text-cube-blue">{progress.next}</p>
       <p className="mt-2 text-[13px] text-ink-400">
-        {progress.done === 0 ? 'Bắt đầu từ khối đã giải.' : `Còn ${progress.total - progress.done} nước.`}
+        {progress.done === 0 ? 'Starting from a solved cube.' : `${progress.total - progress.done} moves to go.`}
       </p>
     </div>
   );

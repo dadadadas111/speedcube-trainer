@@ -1,4 +1,4 @@
-/** Nối từ bản ghi trong DB tới kết quả phân tích. */
+/** Bridges a stored solve record to its analysis. */
 
 import { parseAlg } from '../cube/alg';
 import { cleanMoveStream } from '../cube/moveStream';
@@ -12,7 +12,7 @@ function cacheKey(s: Solve, st: Settings): string {
   return [s.id ?? 'x', s.moves.length, s.timeMs, st.method, st.pauseMinMs, st.pauseFactor].join('|');
 }
 
-/** Trả về null nếu solve bấm giờ tay (không có dữ liệu nước). */
+/** Returns null for hand-timed solves, which carry no move data. */
 export function analyzeSolveRecord(solve: Solve, settings: Settings): SolveAnalysis | null {
   if (!solve.moves?.length) return null;
   const key = cacheKey(solve, settings);

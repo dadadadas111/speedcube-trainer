@@ -1,7 +1,7 @@
 /**
- * Dải phân bổ thời gian từng bước — motif chính của app.
- * Xuất hiện ở mọi nơi có một solve: ngay sau khi bấm giờ, trong danh sách,
- * trong replay, và xếp chồng ở trang thống kê.
+ * The step time ribbon — the app's recurring motif.
+ * It shows up wherever a solve does: right after the timer stops, in the solve
+ * list, in the replay, and stacked up on the stats page.
  */
 
 import type { StepAnalysis } from '../analysis/solve';
@@ -13,7 +13,7 @@ interface Props {
   totalMs: number;
   height?: number;
   showLabels?: boolean;
-  /** Bước đang được chọn sẽ sáng lên, các bước khác mờ đi */
+  /** The selected step stays bright while the others dim */
   activeKey?: string | null;
   onSelect?: (key: string) => void;
 }
@@ -32,7 +32,7 @@ export default function StepRibbon({ steps, totalMs, height = 10, showLabels, ac
             <Tag
               key={s.key}
               {...(onSelect ? { type: 'button' as const, onClick: () => onSelect(s.key) } : {})}
-              title={`${s.label}: ${formatSeconds(s.durationMs)}s · ${s.moveCount} nước · ${s.tps.toFixed(1)} TPS`}
+              title={`${s.label}: ${formatSeconds(s.durationMs)}s · ${s.moveCount} moves · ${s.tps.toFixed(1)} TPS`}
               className="h-full border-0 p-0 transition-opacity"
               style={{
                 width: `${pctW}%`,
@@ -40,7 +40,7 @@ export default function StepRibbon({ steps, totalMs, height = 10, showLabels, ac
                 opacity: active ? 1 : 0.25,
                 cursor: onSelect ? 'pointer' : 'default',
               }}
-              aria-label={`${s.label} ${formatSeconds(s.durationMs)} giây`}
+              aria-label={`${s.label} ${formatSeconds(s.durationMs)} seconds`}
             />
           );
         })}

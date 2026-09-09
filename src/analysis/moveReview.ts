@@ -1,37 +1,38 @@
 /**
- * Chấm điểm từng nước trong một solve, kiểu xem lại ván cờ — nhưng thang đo là
- * NHANH/CHẬM chứ không phải hay/dở. App không biết nước nào là lựa chọn tốt,
- * nhưng biết rất rõ nước nào chậm hơn tốc độ thường ngày của chính bạn.
+ * Rating every move of a solve, the way a chess game review does — except the
+ * scale is FAST/SLOW rather than good/bad. The app has no idea which move was a
+ * good choice, but it knows precisely which one was slower than your own usual
+ * pace.
  *
- * Mốc so sánh lấy từ lịch sử của chính bạn, theo ba tầng dự phòng:
- *   1. Đúng cặp nước đó (ví dụ "R' -> U2") — sát nhất, cần đủ mẫu.
- *   2. Cặp mặt (ví dụ "R -> U") — thưa hơn nên gom nhiều mẫu hơn.
- *   3. Bước đang làm (FB, SB, CMLL...) rồi cuối cùng là toàn bộ lịch sử.
+ * The baseline comes from your own history, with three levels of fallback:
+ *   1. That exact move pair (e.g. "R' -> U2") — the closest fit, needs samples.
+ *   2. The face pair (e.g. "R -> U") — sparser data, so it pools more samples.
+ *   3. The current step (FB, SB, CMLL...), and finally all history.
  *
- * Nhờ vậy "chậm" nghĩa là chậm so với chính bạn ở đúng tình huống đó, chứ không
- * phải so với một con số chung chung.
+ * So "slow" means slow for you in that specific situation, not slow against some
+ * generic number.
  */
 
 import type { SolveAnalysis, StepAnalysis } from './solve';
 import { moveFace } from '../cube/alg';
 
-/** Dưới mức này thì mẫu quá ít, không đủ tin để làm mốc riêng. */
+/** Below this there are too few samples to trust as a baseline of its own. */
 const MIN_TRANSITION_SAMPLES = 6;
 const MIN_FACE_SAMPLES = 10;
 const MIN_STEP_SAMPLES = 12;
-/** Khoảng cách vô lý (rớt bluetooth, đặt khối xuống) thì không tính vào mốc. */
+/** Absurd gaps (a bluetooth drop, putting the cube down) never feed the baseline. */
 const MAX_SANE_GAP_MS = 6000;
 
-export type MoveVerdict = 'rất nhanh' | 'nhanh' | 'bình thường' | 'chậm' | 'đứng hình';
+export type MoveVerdict = 'very fast' | 'fast' | 'normal' | 'slow' | 'stuck';
 
 export interface MoveBaseline {
   transition: Map<string, number>;
   facePair: Map<string, number>;
   step: Map<string, number>;
   overall: number;
-  /** Tổng số khoảng cách giữa hai nước đã dùng để dựng mốc */
+  /** Total number of move-to-move gaps that built the baseline */
   samples: number;
-  /** Số solve đã góp vào */
+  /** How many solves contributed */
   solves: number;
 }
 
@@ -41,25 +42,25 @@ export interface MoveRating {
   prevMove: string | null;
   deltaMs: number;
   baselineMs: number;
-  /** deltaMs / baselineMs — 1 là đúng bằng tốc độ thường ngày */
+  /** deltaMs / baselineMs — 1 means exactly your usual pace */
   ratio: number;
   verdict: MoveVerdict;
-  /** Số ms mất thêm so với mốc; chỉ tính cho nước bị coi là chậm */
+  /** Milliseconds lost against the baseline; only counted for slow moves */
   lostMs: number;
-  basis: 'cặp nước' | 'cặp mặt' | 'bước' | 'toàn bộ';
+  basis: 'move pair' | 'face pair' | 'step' | 'all history';
   stepKey: string;
   stepLabel: string;
 }
 
 export interface SolveReview {
   ratings: MoveRating[];
-  /** Tổng thời gian mất thêm ở những nước chậm bất thường */
+  /** Total time lost on the unusually slow moves */
   lostMs: number;
-  /** Thời gian solve nếu các nước chậm đó chạy bằng tốc độ thường ngày */
+  /** What the solve would have been at your usual pace on those moves */
   potentialMs: number;
   slowest: MoveRating[];
   fastest: MoveRating[];
-  /** Mốc dựng từ bao nhiêu solve — ít quá thì đánh giá chưa đáng tin */
+  /** How many solves built the baseline — too few and the rating is shaky */
   baselineSolves: number;
   reliable: boolean;
 }
@@ -118,19 +119,19 @@ export function buildMoveBaseline(analyses: SolveAnalysis[]): MoveBaseline {
 }
 
 function verdictFor(ratio: number): MoveVerdict {
-  if (ratio < 0.65) return 'rất nhanh';
-  if (ratio < 0.9) return 'nhanh';
-  if (ratio < 1.5) return 'bình thường';
-  if (ratio < 2.5) return 'chậm';
-  return 'đứng hình';
+  if (ratio < 0.65) return 'very fast';
+  if (ratio < 0.9) return 'fast';
+  if (ratio < 1.5) return 'normal';
+  if (ratio < 2.5) return 'slow';
+  return 'stuck';
 }
 
-/** Từ mức này trở lên mới tính là mất thời gian, dưới nữa chỉ là dao động thường. */
+/** Only from here up does a move count as lost time; below is normal variance. */
 const LOST_FROM_RATIO = 1.5;
 
 export function reviewSolve(analysis: SolveAnalysis, baseline: MoveBaseline): SolveReview {
-  // Chưa có lịch sử thì lấy tạm chính solve này làm mốc, để vẫn chỉ ra được
-  // nước nào lệch so với phần còn lại của bài.
+  // With no history, fall back to this solve's own median so we can still point
+  // out which moves stand out against the rest of the run.
   const fallback = isFinite(baseline.overall)
     ? baseline.overall
     : median(analysis.moves.slice(1).map((m, i) => m.t - analysis.moves[i].t).filter((d) => d > 0));
@@ -143,18 +144,18 @@ export function reviewSolve(analysis: SolveAnalysis, baseline: MoveBaseline): So
     const step = stepAt(analysis, i);
 
     let baseMs = baseline.transition.get(prev + '>' + cur);
-    let basis: MoveRating['basis'] = 'cặp nước';
+    let basis: MoveRating['basis'] = 'move pair';
     if (baseMs === undefined) {
       baseMs = baseline.facePair.get(moveFace(prev) + '>' + moveFace(cur));
-      basis = 'cặp mặt';
+      basis = 'face pair';
     }
     if (baseMs === undefined && step) {
       baseMs = baseline.step.get(step.key);
-      basis = 'bước';
+      basis = 'step';
     }
     if (baseMs === undefined) {
       baseMs = fallback;
-      basis = 'toàn bộ';
+      basis = 'all history';
     }
     if (!isFinite(baseMs) || baseMs <= 0) baseMs = Math.max(1, fallback || 1);
 
@@ -189,9 +190,9 @@ export function reviewSolve(analysis: SolveAnalysis, baseline: MoveBaseline): So
 }
 
 export const VERDICT_COLORS: Record<MoveVerdict, string> = {
-  'rất nhanh': '#17b26a',
-  nhanh: '#5fc48f',
-  'bình thường': '#5d6d80',
-  chậm: '#ffcf2e',
-  'đứng hình': '#e0384f',
+  'very fast': '#17b26a',
+  fast: '#5fc48f',
+  normal: '#5d6d80',
+  slow: '#ffcf2e',
+  stuck: '#e0384f',
 };

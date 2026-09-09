@@ -1,10 +1,10 @@
 /**
- * Hộp thoại xin địa chỉ MAC của cube.
+ * The dialog that asks for the cube's MAC address.
  *
- * MAC là bắt buộc chứ không phải tuỳ chọn: thư viện dùng nó làm muối cho khoá
- * giải mã, không có thì mọi gói tin đọc về đều là rác. Trình duyệt chỉ tự đọc
- * được MAC qua watchAdvertisements(), mà API này trên Chrome Android nằm sau cờ
- * thử nghiệm — nên trên điện thoại thường phải nhập tay một lần.
+ * The MAC is required, not optional: the library salts the decryption key with
+ * it, and without it every packet read back is garbage. A browser can only read
+ * the MAC by itself through watchAdvertisements(), which on Chrome for Android
+ * sits behind an experimental flag — so on a phone you usually type it in once.
  */
 
 import { useEffect, useState } from 'react';
@@ -38,19 +38,19 @@ export default function MacPrompt({ deviceName, onSubmit, onCancel }: Props) {
     >
       <div className="panel w-full max-w-[520px] p-5">
         <h2 id="mac-title" className="text-base font-semibold">
-          Nhập địa chỉ MAC của cube
+          Enter the cube's MAC address
         </h2>
         <p className="mt-1 text-[13px] text-ink-400">
           Cube: <span className="font-mono text-ink-200">{deviceName}</span>
         </p>
 
         <p className="mt-3 max-w-[60ch] text-sm text-ink-300">
-          GAN mã hoá dữ liệu bằng khoá trộn từ chính địa chỉ MAC, nên không có MAC thì không đọc được gì.
-          Trình duyệt trên điện thoại thường không cho đọc MAC tự động, phải nhập tay một lần — sau đó app nhớ luôn.
+          GAN encrypts its data with a key salted from the MAC address, so without it nothing can be read.
+          Phone browsers usually cannot read the MAC automatically, so type it once — the app remembers it.
         </p>
 
         <label className="field-label mt-4" htmlFor="mac-input">
-          Địa chỉ MAC
+          MAC address
         </label>
         <input
           id="mac-input"
@@ -65,35 +65,35 @@ export default function MacPrompt({ deviceName, onSubmit, onCancel }: Props) {
         />
         {touched &&
           (normalized ? (
-            <p className="mt-1.5 text-[13px] text-good">Hiểu là {normalized}</p>
+            <p className="mt-1.5 text-[13px] text-good">Read as {normalized}</p>
           ) : (
-            <p className="mt-1.5 text-[13px] text-bad">Cần đúng 6 byte hex, ví dụ AB:CD:EF:12:34:56 hoặc abcdef123456.</p>
+            <p className="mt-1.5 text-[13px] text-bad">Needs exactly 6 hex bytes, e.g. AB:CD:EF:12:34:56 or abcdef123456.</p>
           ))}
 
         <details className="mt-4 rounded-lg border border-ink-700 bg-ink-900 p-3">
-          <summary className="cursor-pointer text-sm text-ink-200">Tìm MAC ở đâu?</summary>
+          <summary className="cursor-pointer text-sm text-ink-200">Where do I find the MAC?</summary>
           <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-[13px] text-ink-300">
             <li>
-              Dùng app quét Bluetooth như <span className="text-ink-100">nRF Connect</span> (Android): quét lên là
-              thấy tên cube kèm địa chỉ MAC ngay bên cạnh. Cách này chắc ăn nhất.
+              Use a Bluetooth scanner such as <span className="text-ink-100">nRF Connect</span> (Android): scan and
+              the cube's name shows up with its MAC address beside it. This is the surest way.
             </li>
             <li>
-              Hoặc mở app chính hãng của GAN, vào phần thông tin thiết bị đã kết nối.
+              Or open GAN's own app and look at the connected device's information.
             </li>
             <li>
-              Muốn khỏi nhập tay: mở <span className="font-mono text-ink-100">chrome://flags</span>, bật{' '}
-              <span className="text-ink-100">Experimental Web Platform features</span>, khởi động lại Chrome. Khi đó
-              trình duyệt tự đọc được MAC từ tín hiệu quảng bá của cube.
+              To skip typing it: open <span className="font-mono text-ink-100">chrome://flags</span>, enable{' '}
+              <span className="text-ink-100">Experimental Web Platform features</span> and restart Chrome. The browser
+              can then read the MAC from the cube's advertisement.
             </li>
           </ul>
         </details>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="btn btn-primary" disabled={!normalized} onClick={() => normalized && onSubmit(normalized)}>
-            Kết nối
+            Connect
           </button>
           <button className="btn" onClick={onCancel}>
-            Huỷ
+            Cancel
           </button>
         </div>
       </div>

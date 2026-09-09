@@ -7,24 +7,25 @@ export default defineConfig({
   server: { port: 5173 },
   build: {
     /**
-     * Hai tuỳ chọn dưới đây tồn tại vì cùng một lý do, và chỉ bản production mới
-     * lộ ra vấn đề — dev server luôn chạy đúng.
+     * Both options below exist for the same reason, and only a production build
+     * shows the problem — the dev server always works.
      *
-     * cubing.js sinh scramble random-state trong một Web Worker. Worker đó nằm
-     * chung đồ thị module với app, nên chunk của nó import cả chunk entry và gọi
-     * helper `__vitePreload` của Vite ngay lúc nạp. Helper này đụng `document`
-     * để chèn thẻ <link> preload — mà trong worker không có `document`, nên worker
-     * chết. Hậu quả rất kín: app vẫn chạy bình thường nhưng âm thầm rơi từ
-     * scramble random-state chuẩn WCA xuống random-move.
+     * cubing.js generates random-state scrambles in a Web Worker. That worker
+     * shares the module graph with the app, so its chunk imports the entry chunk
+     * and calls Vite's `__vitePreload` helper as soon as it loads. The helper
+     * touches `document` to insert preload <link> tags — and a worker has no
+     * `document`, so the worker dies. The consequence is quiet: the app keeps
+     * working but silently drops from WCA random-state scrambles to random-move.
      *
-     * - modulePreload: false  -> bỏ phần chèn link preload cho module.
-     * - cssCodeSplit: false   -> gộp CSS thành một file nạp từ HTML, nhờ vậy
-     *                            dynamic import không còn kèm danh sách CSS cần
-     *                            preload. Danh sách rỗng thì `__vitePreload`
-     *                            thoát sớm và không chạm tới `document` nữa.
+     * - modulePreload: false  -> drops the module preload link insertion.
+     * - cssCodeSplit: false   -> bundles CSS into one file loaded from the HTML,
+     *                            so a dynamic import no longer carries a list of
+     *                            CSS to preload. With an empty list
+     *                            `__vitePreload` returns early and never touches
+     *                            `document`.
      *
-     * Xem thêm lớp bảo vệ ở src/main.tsx (chặn tác dụng phụ DOM của entry) và
-     * chỉ báo nguồn scramble trên giao diện để lỗi này không thể lặng lẽ quay lại.
+     * See also the guard in src/main.tsx (blocking the entry's DOM side effects)
+     * and the scramble-source badge in the UI, so this cannot come back quietly.
      */
     modulePreload: false,
     cssCodeSplit: false,

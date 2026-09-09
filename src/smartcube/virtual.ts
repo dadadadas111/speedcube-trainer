@@ -1,12 +1,12 @@
 /**
- * Khối ảo điều khiển bằng bàn phím — để dùng thử app khi chưa pair smart cube,
- * và để kiểm thử. Phát ra đúng loại sự kiện như khối thật.
+ * A keyboard-driven virtual cube, for trying the app before pairing a smart
+ * cube and for testing. It emits exactly the same events as a real one.
  */
 
 import { SOLVED_STATE, applyMove, cloneState, type CubeState } from '../cube/cube';
 import type { LiveMove } from './connection';
 
-/** Phím thường = nước thuận, giữ Shift = nước 180. */
+/** A plain key is a clockwise turn; hold Shift for a half turn. */
 export const KEYMAP: Record<string, string> = {
   j: 'U', f: "U'",
   i: 'R', k: "R'",
@@ -56,7 +56,7 @@ class VirtualCube {
     this.setState(cloneState(SOLVED_STATE));
   }
 
-  /** Thực hiện một nước như thể người dùng vừa vặn khối. */
+  /** Perform a move as though the user just turned the cube. */
   push(move: string, at = performance.now()) {
     this.state = applyMove(this.state, move);
     const lm: LiveMove = {
@@ -69,7 +69,7 @@ class VirtualCube {
     for (const l of this.listeners) l.state?.(this.state, false);
   }
 
-  /** Chuyển sự kiện bàn phím thành nước; trả về nước đã thực hiện hoặc null. */
+  /** Turn a key event into a move; returns the move performed, or null. */
   handleKey(e: KeyboardEvent): string | null {
     if (e.ctrlKey || e.metaKey || e.altKey) return null;
     const base = KEYMAP[e.key.toLowerCase()];

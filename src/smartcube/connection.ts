@@ -1,9 +1,9 @@
 /**
- * Lớp bọc quanh gan-web-bluetooth: quản lý kết nối, theo dõi trạng thái khối
- * theo thời gian thực và phát sự kiện cho phần còn lại của app.
+ * A wrapper around gan-web-bluetooth: manages the connection, tracks the cube
+ * state live, and emits events for the rest of the app.
  *
- * Yêu cầu Web Bluetooth -> Chrome/Edge trên desktop hoặc Android. Safari và
- * iOS không hỗ trợ (trừ khi dùng trình duyệt Bluefy).
+ * Needs Web Bluetooth, so Chrome or Edge on desktop or Android. Safari and iOS
+ * do not support it (short of using the Bluefy browser).
  */
 
 import { connectGanCube, cubeTimestampLinearFit, type GanCubeConnection, type GanCubeEvent, type GanCubeMove } from 'gan-web-bluetooth';
@@ -24,16 +24,16 @@ export interface CubeQuaternion {
 
 export interface LiveMove {
   move: string;
-  /** Mốc thời gian theo đồng hồ máy (ms) */
+  /** Timestamp from the host clock (ms) */
   localTs: number;
-  /** Mốc thời gian theo đồng hồ trong cube (chính xác hơn), null nếu thiếu */
+  /** Timestamp from the cube's own clock, more accurate; null when missing */
   cubeTs: number | null;
   raw: GanCubeMove;
 }
 
 type Listener = {
   move?: (m: LiveMove, state: CubeState) => void;
-  /** Dữ liệu đọc về là rác — gần như chắc chắn do địa chỉ MAC sai */
+  /** The data read back is garbage — almost certainly a wrong MAC address */
   garbled?: () => void;
   state?: (s: CubeState, fromCube: boolean) => void;
   status?: (s: CubeLinkStatus, info: CubeInfo | null) => void;
@@ -58,15 +58,15 @@ export class CubeLink {
 
   status: CubeLinkStatus = 'disconnected';
   info: CubeInfo | null = null;
-  /** Hướng cube báo về lần gần nhất, null nếu cube không có con quay */
+  /** The cube's last reported orientation; null if it has no gyroscope */
   lastQuaternion: CubeQuaternion | null = null;
-  /** Số lần cube gửi về trạng thái khác với trạng thái app đang giữ */
+  /** How often the cube reported a state differing from the app's */
   driftCount = 0;
-  /** Số gói trạng thái giải mã ra rác; >0 nghĩa là MAC nhiều khả năng sai */
+  /** State packets that decrypted to garbage; above 0 means a likely bad MAC */
   garbledCount = 0;
-  /** Số thứ tự của nước cuối cùng đã áp; dùng để bỏ qua ảnh chụp trạng thái cũ */
+  /** Serial of the last applied move; used to drop stale state snapshots */
   private lastSerial: number | null = null;
-  /** Đặt true khi người dùng cho phép hỏi tay địa chỉ MAC */
+  /** Set when the UI can prompt the user for the MAC address */
   askForMac: ((deviceName: string) => Promise<string | null>) | null = null;
 
   static get supported(): boolean {
@@ -88,14 +88,14 @@ export class CubeLink {
 
   async connect(): Promise<void> {
     if (this.status !== 'disconnected') return;
-    if (!CubeLink.supported) throw new Error('Trình duyệt này không hỗ trợ Web Bluetooth. Hãy dùng Chrome hoặc Edge.');
+    if (!CubeLink.supported) throw new Error('This browser does not support Web Bluetooth. Use Chrome or Edge.');
     this.status = 'connecting';
     this.emitStatus();
     try {
       const conn = await connectGanCube(async (device, isFallback) => {
         const saved = localStorage.getItem(`${MAC_STORAGE_KEY}.${device.name ?? device.id ?? 'cube'}`);
         if (saved) return saved;
-        if (!isFallback) return null; // để thư viện tự dò trước
+        if (!isFallback) return null; // let the library try to detect it first
         const entered = this.askForMac ? await this.askForMac(device.name ?? 'cube') : null;
         const mac = entered ? normalizeMac(entered) : null;
         if (mac) localStorage.setItem(`${MAC_STORAGE_KEY}.${device.name ?? device.id ?? 'cube'}`, mac);
@@ -127,16 +127,16 @@ export class CubeLink {
   }
 
   /**
-   * Yêu cầu cube gửi lại trạng thái thật. Xoá mốc số thứ tự trước khi hỏi, vì
-   * đây là yêu cầu do người dùng chủ động bấm nên câu trả lời phải luôn được
-   * nhận, kể cả khi bộ lọc gói cũ tưởng nhầm là lạc hậu.
+   * Ask the cube to report its real state. The serial marker is cleared first:
+   * this is a request the user deliberately made, so the answer must always be
+   * accepted, even if the stale-packet filter would otherwise reject it.
    */
   async resync(): Promise<void> {
     this.lastSerial = null;
     await this.conn?.sendCubeCommand({ type: 'REQUEST_FACELETS' });
   }
 
-  /** Chờ gói trạng thái kế tiếp từ cube, hoặc hết giờ. */
+  /** Wait for the next state packet from the cube, or time out. */
   private nextState(timeoutMs = 1200): Promise<CubeState | null> {
     return new Promise((resolve) => {
       let done = false;
@@ -162,14 +162,14 @@ export class CubeLink {
   }
 
   /**
-   * Báo cho cube biết vị trí hiện tại của nó chính là trạng thái đã giải.
+   * Tell the cube that its current position is the solved state.
    *
-   * Đây là cách duy nhất chữa được khi CHÍNH CUBE nhớ sai (bạn tháo lắp, hoặc
-   * nó bỏ sót nước của chính nó) — lúc đó hỏi lại cube bao nhiêu lần cũng chỉ
-   * nhận về đúng cái sai đó. Sau khi đặt lại thì hỏi lại để xác nhận cube đã
-   * thật sự nhận, thay vì báo thành công một cách mù quáng.
+   * This is the only cure when THE CUBE ITSELF is wrong (you took it apart, or
+   * it missed one of its own turns) — asking it again just returns the same
+   * wrong answer. After resetting we ask again to confirm the cube really took
+   * it, rather than blindly reporting success.
    *
-   * @returns true nếu cube xác nhận đang ở trạng thái đã giải
+   * @returns true if the cube confirms it is solved
    */
   async resetToSolved(): Promise<boolean> {
     if (!this.conn) {
@@ -184,7 +184,7 @@ export class CubeLink {
     const pending = this.nextState();
     await this.conn.sendCubeCommand({ type: 'REQUEST_FACELETS' });
     const confirmed = await pending;
-    if (!confirmed) return isSolved(this.state); // cube không trả lời, tạm tin bản đặt lại
+    if (!confirmed) return isSolved(this.state); // no answer; trust the local reset
     return isSolved(confirmed);
   }
 
@@ -216,17 +216,17 @@ export class CubeLink {
           truth = null;
         }
         if (!truth || !isPlausibleState(truth)) {
-          // Giải mã ra rác: khoá mã hoá sai, tức là MAC nhập sai.
+          // Decrypted to garbage: the key is wrong, so the MAC was mistyped.
           this.garbledCount++;
           for (const l of this.listeners) l.garbled?.();
           break;
         }
-        // Ảnh chụp trạng thái cũ hơn nước đã áp thì bỏ qua, nếu không sẽ kéo lùi
-        // trạng thái của app (xem smartcube/serial.ts).
+        // Drop snapshots older than the last applied move, or the app's state
+        // gets dragged backwards (see smartcube/serial.ts).
         if (!isFreshSerial(e.serial, this.lastSerial)) break;
         this.lastSerial = e.serial;
-        // Cube là nguồn sự thật. Nếu lệch thì đã có nước bị rớt qua bluetooth —
-        // đếm lại để giao diện còn cảnh báo người dùng.
+        // The cube is the source of truth. A mismatch means bluetooth dropped a
+        // move, so count it and let the UI warn about it.
         if (toKociemba(this.state) !== e.facelets) this.driftCount++;
         this.setState(truth, true);
         break;
@@ -259,8 +259,8 @@ export class CubeLink {
 }
 
 /**
- * Hiệu chỉnh mốc thời gian của một loạt nước bằng hồi quy tuyến tính giữa đồng
- * hồ trong cube và đồng hồ máy, rồi quy về mốc 0 tại nước đầu tiên.
+ * Fit a run of move timestamps by linear regression between the cube's clock
+ * and the host clock, then rebase so the first move is at zero.
  */
 export function normalizeTimestamps(moves: LiveMove[]): { move: string; t: number }[] {
   if (!moves.length) return [];

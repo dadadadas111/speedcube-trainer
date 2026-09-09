@@ -52,7 +52,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
   const targetState = useMemo(() => applyMoves(SOLVED_STATE, scramble), [scramble]);
 
-  /* ---------- scramble mới ---------- */
+  /* ---------- new scramble ---------- */
   const newScramble = useCallback(async () => {
     const { moves, source } = await generateScramble(settings.randomStateScramble);
     scrambleRef.current = moves;
@@ -65,7 +65,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     setPhaseBoth(usingCube && settings.requireScrambleMatch ? 'scrambling' : 'ready');
   }, [settings.randomStateScramble, settings.requireScrambleMatch, usingCube, setPhaseBoth]);
 
-  // giữ trạng thái khối mới nhất cho các callback không phụ thuộc render
+  // holds the latest cube state for callbacks that must not depend on renders
   const cubeStateRef = useRef<CubeState>(cloneState(SOLVED_STATE));
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     void loadRecent();
   }, [loadRecent, revision]);
 
-  /* ---------- đồng hồ ---------- */
+  /* ---------- clock ---------- */
   const tick = useCallback(() => {
     setDisplay(performance.now() - startRef.current);
     rafRef.current = requestAnimationFrame(tick);
@@ -93,7 +93,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     rafRef.current = 0;
   };
 
-  /** Kết thúc solve, lấy mốc thời gian từ nước cuối cùng ghi được. */
+  /** End the solve, taking the final time from the last move recorded. */
   const finishFromMoves = useCallback(() => {
     const norm = normalizeTimestamps(movesRef.current);
     const t = norm[norm.length - 1]?.t ?? performance.now() - startRef.current;
@@ -124,20 +124,20 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     [sessionId, bump, newScramble, setPhaseBoth],
   );
 
-  /* ---------- nhập từ khối ---------- */
+  /* ---------- input from the cube ---------- */
   useCubeInput(
     {
       onState: (s) => {
         cubeStateRef.current = s;
         setCubeState(s);
-        // Trạng thái có thể đổi mà không qua nước nào (cube gửi lại facelets sau
-        // khi đồng bộ) — cập nhật lại tiến độ cho khớp.
+        // The state can change without any move (the cube re-sends facelets
+        // after a sync) — refresh the progress to match.
         if (phaseRef.current === 'scrambling' && trackerRef.current) {
           setProgress(trackerRef.current.update(s));
         }
-        // Chốt chặn thứ hai cho việc dừng đồng hồ. Nếu vì lý do gì đó sự kiện
-        // nước cuối bị lỡ mà cube tự gửi trạng thái về báo đã giải, vẫn dừng —
-        // mốc thời gian lấy theo nước cuối cùng nhận được nên vẫn chính xác.
+        // Second safety net for stopping the clock. If the final move event is
+        // missed but the cube reports a solved state on its own, stop anyway —
+        // the time still comes from the last move received, so it stays exact.
         if (phaseRef.current === 'running' && isSolved(s) && movesRef.current.length > 2) {
           finishFromMoves();
         }
@@ -178,8 +178,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   );
 
   /**
-   * Cắm hoặc rút cube giữa chừng thì đổi cách bấm giờ cho khớp: có cube thì
-   * chuyển sang chế độ dẫn scramble, không có thì quay về bấm phím cách.
+   * Connecting or disconnecting the cube mid-session switches the timing mode:
+   * with a cube it becomes scramble-guided, without one it falls back to space.
    */
   useEffect(() => {
     const p = phaseRef.current;
@@ -197,7 +197,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     }
   }, [usingCube, settings.requireScrambleMatch, setPhaseBoth]);
 
-  // Đếm ngược inspection
+  // Inspection countdown
   useEffect(() => {
     if (phase !== 'inspecting') return;
     const started = performance.now();
@@ -206,7 +206,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     return () => clearInterval(id);
   }, [phase, settings.inspectionSeconds]);
 
-  /* ---------- bấm giờ bằng phím cách ---------- */
+  /* ---------- spacebar timing ---------- */
   useEffect(() => {
     const isTyping = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -223,7 +223,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
       }
       if (e.code !== 'Space' || e.repeat) return;
       e.preventDefault();
-      if (usingCube) return; // có khối thật thì nước đầu tiên tự khởi động
+      if (usingCube) return; // with a real cube the first move starts it
       if (p !== 'running') {
         setPhaseBoth('holding');
         holdRef.current = window.setTimeout(() => setPhaseBoth('armed'), HOLD_MS);
@@ -258,15 +258,15 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   }, [finishSolve]);
 
   /**
-   * Chốt chặn thứ ba: đang chạy mà im tay một lúc thì hỏi lại cube xem đã giải
-   * xong chưa. Bắt được cả trường hợp mất hẳn sự kiện nước cuối, mà không bao
-   * giờ dừng nhầm vì chỉ dừng khi chính cube báo là đã giải.
+   * Third safety net: while running, a pause in turning triggers a poll asking
+   * the cube whether it is solved. This catches a dropped final move without
+   * ever stopping wrongly, because it only stops when the cube itself says so.
    */
   useEffect(() => {
     if (phase !== 'running' || cubeStatus !== 'connected') return;
     const id = setInterval(() => {
-      // Chỉ hỏi khi tay đã ngừng một lúc — lúc đang quay liên tục thì không cần,
-      // và cũng để khỏi làm nghẽn đường bluetooth giữa lúc giải.
+      // Only ask after the hands have stopped for a moment — mid-turn there is
+      // no need, and it keeps the bluetooth link clear during the solve.
       if (performance.now() - lastMoveAtRef.current > 1000) void cubeLink.resync();
     }, 700);
     return () => clearInterval(id);
@@ -274,7 +274,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
   useEffect(() => () => stopRaf(), []);
 
-  /* ---------- dẫn xuất ---------- */
+  /* ---------- derived ---------- */
   const analysis = useMemo(() => (lastSolve ? analyzeSolveRecord(lastSolve, settings) : null), [lastSolve, settings]);
   const times = useMemo(() => recent.map(effectiveTime), [recent]);
   const finiteTimes = times.filter(isFinite);
@@ -283,9 +283,9 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const best = finiteTimes.length ? Math.min(...finiteTimes) : NaN;
 
   /**
-   * Chỉ báo "khối chưa giải" khi app thật sự bó tay: đang lạc đường mà lại không
-   * biết người dùng đã vặn gì nên không dựng được gợi ý sửa. Nếu biết thì cứ đưa
-   * gợi ý vặn ngược, kể cả khi mới sai đúng một nước đầu tiên.
+   * Only say "cube not solved" when the app is genuinely stuck: off track and
+   * unable to work out what was turned, so it has no fix to offer. When it does
+   * know, show the undo moves instead, even after a single wrong turn.
    */
   const notReady =
     usingCube &&
@@ -315,12 +315,12 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           {formatTime(display)}
         </div>
         {usingCube && (
-          // Khối ảo chạy theo khối thật ngay lúc giải — cũng là cách nhìn thấy
-          // ngay nếu bluetooth rớt nước, vì lúc đó hai bên sẽ lệch nhau.
+          // The on-screen cube follows the real one during the solve — which is
+          // also how a dropped bluetooth move shows up, as the two diverge.
           <CubeView state={cubeState} size={150} quaternion={quaternion} interactive={false} />
         )}
         <p className="text-sm text-ink-400">
-          {usingCube ? 'Giải xong là đồng hồ tự dừng.' : 'Bấm phím bất kỳ để dừng.'}
+          {usingCube ? 'The clock stops when the cube is solved.' : 'Press any key to stop.'}
         </p>
       </div>
     );
@@ -335,11 +335,11 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
               <ScrambleGuide moves={scramble} progress={phase === 'scrambling' ? progress : null} />
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
-              <button className="btn btn-ghost" onClick={() => void newScramble()} title="Đổi scramble khác">
-                Đổi
+              <button className="btn btn-ghost" onClick={() => void newScramble()} title="Get a different scramble">
+                New
               </button>
               {settings.randomStateScramble && scrambleSource === 'random-move' && (
-                <span className="text-[11px] text-warn" title="Không nạp được bộ sinh random-state; đang tạm dùng scramble ngẫu nhiên theo nước.">
+                <span className="text-[11px] text-warn" title="The random-state generator failed to load; falling back to random moves.">
                   random-move
                 </span>
               )}
@@ -349,7 +349,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           <div className="mt-4 flex flex-wrap items-start gap-5 border-t border-ink-700 pt-4">
             <div>
               <p className="mb-1.5 text-[13px] text-ink-400">
-                {usingCube && phase === 'scrambling' ? 'Khối của bạn' : 'Sau khi scramble'}
+                {usingCube && phase === 'scrambling' ? 'Your cube' : 'After the scramble'}
               </p>
               <CubeView
                 state={usingCube && phase === 'scrambling' ? cubeState : targetState}
@@ -361,19 +361,19 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
               {phase === 'inspecting' ? (
                 <div>
                   <p className="tnum font-mono text-4xl font-semibold text-warn">{(inspectLeft / 1000).toFixed(1)}</p>
-                  <p className="text-[13px] text-ink-400">Nước đầu tiên bắt đầu tính giờ.</p>
+                  <p className="text-[13px] text-ink-400">The first move starts the timer.</p>
                 </div>
               ) : phase === 'ready' && usingCube ? (
                 <p className="armed text-lg font-semibold text-good">
-                  {settings.requireScrambleMatch ? 'Scramble xong' : 'Sẵn sàng'} — vặn nước đầu là chạy
+                  {settings.requireScrambleMatch ? 'Scrambled' : 'Ready'} — the first move starts the clock
                 </p>
               ) : phase === 'armed' ? (
-                <p className="text-lg font-semibold text-good">Thả tay là chạy</p>
+                <p className="text-lg font-semibold text-good">Release to start</p>
               ) : phase === 'holding' ? (
-                <p className="text-lg font-semibold text-warn">Giữ thêm chút nữa…</p>
+                <p className="text-lg font-semibold text-warn">Keep holding…</p>
               ) : !usingCube ? (
                 <p className="text-sm text-ink-300">
-                  Giữ phím cách để bấm giờ tay, hoặc kết nối smart cube ở góc trên để được dẫn vặn scramble.
+                  Hold space to time by hand, or connect a smart cube from the top bar to be guided through the scramble.
                 </p>
               ) : (
                 <ScrambleHint progress={progress} notReady={!!notReady} />
@@ -382,7 +382,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
               {usingCube && (phase === 'scrambling' || phase === 'done') && (
                 <div className="mt-4 border-t border-ink-800 pt-3">
                   <p className="mb-1.5 text-[12px] text-ink-500">
-                    App hiển thị khác khối thật?
+                    App showing something different from your cube?
                   </p>
                   <CubeSync compact />
                 </div>
@@ -392,7 +392,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
                   className="btn btn-ghost mt-3 !px-2 !py-1 !text-[13px]"
                   onClick={() => virtualCube.setState(applyMoves(SOLVED_STATE, scramble))}
                 >
-                  Vặn hộ khối ảo theo scramble
+                  Apply the scramble to the virtual cube
                 </button>
               )}
             </div>
@@ -421,7 +421,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
                     DNF
                   </button>
                   <button className="btn btn-danger !py-1 !text-[13px]" onClick={() => void deleteSolve(lastSolve)}>
-                    Xoá
+                    Delete
                   </button>
                 </div>
               )}
@@ -429,7 +429,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
             <dl className="flex gap-6">
               <Stat label="ao5" value={formatTime(ao5)} />
               <Stat label="ao12" value={formatTime(ao12)} />
-              <Stat label="tốt nhất" value={formatTime(best)} />
+              <Stat label="best" value={formatTime(best)} />
             </dl>
           </div>
           {lastSolve && (
@@ -442,13 +442,13 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
       <section className="panel flex max-h-[60vh] flex-col overflow-hidden xl:max-h-[calc(100vh-8.5rem)]">
         <header className="flex items-baseline justify-between border-b border-ink-700 px-4 py-3">
-          <h2 className="text-sm font-semibold">Solve trong phiên</h2>
+          <h2 className="text-sm font-semibold">Session solves</h2>
           <span className="tnum text-[13px] text-ink-400">{recent.length}</span>
         </header>
         <div className="overflow-y-auto">
           {recent.length === 0 && (
             <p className="px-4 py-6 text-sm text-ink-400">
-              Chưa có solve nào. Vặn khối theo scramble ở trên rồi giải — đồng hồ tự chạy.
+              No solves yet. Turn the scramble above into your cube and solve — the clock runs itself.
             </p>
           )}
           {recent.map((s, i) => (
@@ -486,7 +486,7 @@ function SolveRow({ solve, index, onOpen }: { solve: Solve; index: number; onOpe
         {a ? (
           <StepRibbon steps={a.steps} totalMs={a.totalMs} height={6} />
         ) : (
-          <span className="text-[12px] text-ink-500">bấm tay</span>
+          <span className="text-[12px] text-ink-500">hand timed</span>
         )}
       </span>
     </button>

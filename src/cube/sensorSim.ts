@@ -1,19 +1,20 @@
 /**
- * Mô phỏng cách cảm biến của smart cube báo nước về.
+ * Simulates how a smart cube's sensors report turns.
  *
- * Cảm biến chỉ đo được vòng quay của 6 mặt so với LÕI cube. Nước lát cắt và
- * nước rộng làm chính cái lõi quay, nên:
- *   M  -> báo về thành hai sự kiện R và L'
- *   r  -> báo về thành L
- *   x/y/z -> không sinh sự kiện nào
- * và quan trọng nhất: mọi nước SAU đó đều bị đổi hệ quy chiếu theo.
+ * The sensors only measure each of the 6 faces rotating relative to the CORE.
+ * Slice and wide moves rotate the core itself, so:
+ *   M  -> reported as two events, R and L'
+ *   r  -> reported as L
+ *   x/y/z -> produce no events at all
+ * and most importantly: every move AFTER one of those is reported in a rotated
+ * frame of reference.
  *
- * Dùng cho test và cho chế độ demo bằng bàn phím.
+ * Used by the tests.
  */
 
 import { MOVE_PERMS, composePerm, IDENTITY_PERM } from './geometry';
 
-/** nước -> (các nước mặt mà cảm biến thấy) + (phép quay mà lõi bị lệch) */
+/** move -> (the face turns the sensors see) + (the rotation the core picks up) */
 const DECOMPOSITION: Record<string, { faces: string[]; rot: string | null }> = {
   M: { faces: ['R', "L'"], rot: "x'" }, "M'": { faces: ["R'", 'L'], rot: 'x' }, M2: { faces: ['R2', 'L2'], rot: 'x2' },
   E: { faces: ['U', "D'"], rot: "y'" }, "E'": { faces: ["U'", 'D'], rot: 'y' }, E2: { faces: ['U2', 'D2'], rot: 'y2' },
@@ -39,15 +40,15 @@ function invertPerm(p: Uint8Array): Uint8Array {
   return o;
 }
 
-/** Nước mặt `m` trông như thế nào trong hệ quy chiếu của lõi đã lệch `drift`. */
+/** How face turn `m` looks in the frame of a core that has drifted by `drift`. */
 function conjugate(m: string, drift: Uint8Array): string {
   const p = composePerm(composePerm(invertPerm(drift), MOVE_PERMS[m]), drift);
   const name = FACE_BY_PERM.get(permKey(p));
-  if (!name) throw new Error(`Liên hợp không ra nước mặt: ${m}`);
+  if (!name) throw new Error(`Conjugation did not yield a face turn: ${m}`);
   return name;
 }
 
-/** Chuyển một chuỗi nước "như người giải nghĩ" thành chuỗi "như cảm biến báo". */
+/** Turn a sequence "as the solver thinks of it" into "as the sensors report it". */
 export function simulateSensorStream(moves: string[]): string[] {
   let drift: Uint8Array = IDENTITY_PERM as Uint8Array;
   const out: string[] = [];
