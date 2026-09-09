@@ -34,6 +34,18 @@ Việc dò tiến độ so khớp theo khoá bất biến-với-phép-quay, nên
 được** — chỉ cần thực hiện đúng ký hiệu trong hệ quy chiếu của chính mình. Khoá này vẫn
 phân biệt màu nên vặn nhầm mặt đối diện (cam thay vì đỏ) vẫn bị bắt lỗi.
 
+Có **ba** trạng thái chứ không phải hai, vì cube báo một nước 180 độ thành hai sự kiện quý
+riêng biệt — vặn `U2` thì sau nhịp đầu trạng thái khối chưa khớp bước nào cả. Nếu chỉ có
+đúng/sai thì màn hình nháy đỏ giữa chừng mỗi lần gặp `U2` hay `R2`. Nên:
+
+| Bạn vừa vặn | Màu | Ý nghĩa |
+|---|---|---|
+| đủ và đúng | xanh | sang nước kế tiếp |
+| đúng mặt, chưa đủ vòng (kể cả ngược chiều) | vàng | đang vặn dở, kèm chỉ rõ còn thiếu bao nhiêu |
+| sang mặt khác | đỏ | mới là sai, kèm chuỗi vặn ngược để quay lại |
+
+Vặn `U'` khi cần `U2` cũng là vàng: vặn thêm `U'` nữa là đủ 180 độ, không phải quay lại.
+
 **2. Xem lại từng bước.** Mỗi solve được tách thành FB → SB → CMLL → EO → 4b → 4c
 (hoặc Cross → F2L → OLL → PLL). Phát lại đúng nhịp thật, tự dừng ở cuối mỗi bước, tua
 từng nước, xem khối ở mọi thời điểm với các miếng của bước hiện tại được tô sáng.
@@ -181,7 +193,7 @@ coi là "chưa xong" và cả LSE bị dồn thành một cục ở cuối. Gi�
 ## Kiểm thử
 
 ```bash
-npm test            # 227 khẳng định, chạy trong vài giây
+npm test            # 245 khẳng định, chạy trong vài giây
 npm run check:lse   # duyệt toàn bộ 184.320 trạng thái của nhóm LSE ⟨M, U⟩
 ```
 

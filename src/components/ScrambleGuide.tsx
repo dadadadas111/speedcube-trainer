@@ -14,6 +14,7 @@ interface Props {
 export default function ScrambleGuide({ moves, progress }: Props) {
   const done = progress?.done ?? -1;
   const lost = progress?.status === 'off-track';
+  const partial = progress?.status === 'partial';
   const complete = progress?.status === 'complete';
 
   return (
@@ -25,13 +26,16 @@ export default function ScrambleGuide({ moves, progress }: Props) {
         {moves.map((m, i) => {
           const isDone = progress ? i < done : false;
           const isNext = progress ? i === done && !lost && !complete : false;
+          // Đang vặn dở nước hiện tại thì tô vàng chứ không đỏ — cube báo một
+          // nước 180 độ thành hai sự kiện nên nửa chừng là chuyện bình thường.
+          const bg = isNext ? (partial ? 'var(--color-warn)' : 'var(--color-cube-blue)') : 'transparent';
           return (
             <span
               key={i}
               className="rounded-[4px] px-1.5 py-1 transition-colors"
               style={{
-                background: isNext ? 'var(--color-cube-blue)' : 'transparent',
-                color: isNext ? '#fff' : isDone ? 'var(--color-ink-500)' : 'var(--color-ink-100)',
+                background: bg,
+                color: isNext ? (partial ? '#10141a' : '#fff') : isDone ? 'var(--color-ink-500)' : 'var(--color-ink-100)',
               }}
             >
               {m}
@@ -48,7 +52,13 @@ export default function ScrambleGuide({ moves, progress }: Props) {
                 className="h-full transition-[width,background-color]"
                 style={{
                   width: `${(done / Math.max(1, progress.total)) * 100}%`,
-                  background: lost ? 'var(--color-bad)' : complete ? 'var(--color-good)' : 'var(--color-cube-blue)',
+                  background: lost
+                    ? 'var(--color-bad)'
+                    : partial
+                      ? 'var(--color-warn)'
+                      : complete
+                        ? 'var(--color-good)'
+                        : 'var(--color-cube-blue)',
                 }}
               />
             </div>
@@ -84,6 +94,18 @@ export function ScrambleHint({ progress, notReady }: { progress: ScrambleProgres
   }
   if (progress.status === 'complete') {
     return <p className="armed text-lg font-semibold text-good">Scramble xong — vặn nước đầu là đồng hồ chạy</p>;
+  }
+  if (progress.status === 'partial') {
+    return (
+      <div>
+        <p className="text-[13px] text-ink-400">Đang vặn dở</p>
+        <p className="font-mono text-4xl font-semibold leading-none text-warn">{progress.remaining}</p>
+        <p className="mt-2 max-w-[46ch] text-[13px] text-ink-400">
+          Vặn nốt cho đủ nước <span className="font-mono text-ink-200">{progress.next}</span>. Cube báo nước 180
+          độ thành hai nhịp nên nửa chừng là bình thường.
+        </p>
+      </div>
+    );
   }
   if (progress.status === 'off-track') {
     return (

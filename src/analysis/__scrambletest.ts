@@ -58,12 +58,13 @@ const SCRAMBLE = parseAlg("R U' F2 D B' R2 U L' D2 F R2 B U2 L");
   check('gợi ý sửa là vặn ngược lại', p.fix.join(' ') === "L'", p.fix.join(' '));
 }
 
-// 4. Vặn sai hướng
+// 4. Vặn đúng mặt nhưng sai chiều: đây là "đang vặn dở", không phải sai.
+//    Vặn thêm cho đủ vòng là thành đúng, không cần vặn ngược lại.
 {
   const t = new ScrambleTracker(SCRAMBLE);
   const p = t.update(applyMove(SOLVED_STATE, "R'"), "R'");
-  check('vặn sai chiều -> off-track', p.status === 'off-track');
-  check('gợi ý sửa đúng', p.fix.join(' ') === 'R', p.fix.join(' '));
+  check('vặn đúng mặt sai chiều -> đang vặn dở', p.status === 'partial', p.status);
+  check('chỉ rõ còn thiếu bao nhiêu', p.remaining === 'R2', String(p.remaining));
 }
 
 // 5. Lạc nhiều nước rồi sửa theo gợi ý thì quay lại đúng đường
@@ -111,6 +112,83 @@ const SCRAMBLE = parseAlg("R U' F2 D B' R2 U L' D2 F R2 B U2 L");
     ['y', 'x2', "z' y"].every((r) => isAtStart(applyMoves(SOLVED_STATE, r.split(' ')))));
   check('khối chưa giải thì không', !isAtStart(applyMove(SOLVED_STATE, 'R')));
   check('nhất quán với isSolved', isAtStart(SOLVED_STATE) === isSolved(SOLVED_STATE));
+}
+
+/* ---- Nước 180 độ: cube báo thành hai sự kiện quý, không được nháy đỏ giữa chừng ---- */
+{
+  const SCR = parseAlg("U2 R F2 L' D2 B");
+  const t = new ScrambleTracker(SCR);
+  let s = SOLVED_STATE;
+  t.update(s);
+  check('bắt đầu: nước tiếp theo là U2', t.peek().next === 'U2');
+
+  // nửa đầu của U2
+  s = applyMove(s, 'U');
+  let p = t.update(s, 'U');
+  check('mới vặn nửa U2 -> đang vặn dở, KHÔNG phải sai', p.status === 'partial', p.status);
+  check('và chỉ rõ còn thiếu bao nhiêu', p.remaining === 'U', String(p.remaining));
+  check('tiến độ chưa nhích', p.done === 0);
+
+  // nửa sau
+  s = applyMove(s, 'U');
+  p = t.update(s, 'U');
+  check('vặn nốt nửa sau -> đúng đường', p.status === 'on-track' && p.done === 1, `${p.status}/${p.done}`);
+  check('và chuyển sang nước kế tiếp', p.next === 'R');
+}
+
+/* ---- Vặn đúng mặt nhưng sai chiều cũng là "đang vặn dở" ---- */
+{
+  const t = new ScrambleTracker(parseAlg("U2 R F2"));
+  const p = t.update(applyMove(SOLVED_STATE, "U'"), "U'");
+  check('U2 mà vặn ngược chiều -> vẫn là đang vặn dở', p.status === 'partial', p.status);
+  // đã vặn U' (một nhịp ngược); vặn thêm U' nữa là thành đúng 180 độ
+  check("còn thiếu U' nữa", p.remaining === "U'", String(p.remaining));
+}
+{
+  const t = new ScrambleTracker(parseAlg("R U F"));
+  const p = t.update(applyMove(SOLVED_STATE, "R'"), "R'");
+  check('nước quý mà vặn ngược chiều -> đang vặn dở', p.status === 'partial', p.status);
+  check('còn thiếu R2', p.remaining === 'R2', String(p.remaining));
+  // vặn tiếp cho đủ
+  const p2 = t.update(applyMove(applyMove(SOLVED_STATE, "R'"), 'R2'), 'R2');
+  check('vặn bù cho đủ thì thành đúng', p2.status === 'on-track' && p2.done === 1, `${p2.status}/${p2.done}`);
+}
+
+/* ---- Đang vặn dở mà nhảy sang mặt khác thì mới là sai ---- */
+{
+  const t = new ScrambleTracker(parseAlg("U2 R F2"));
+  let s = applyMove(SOLVED_STATE, 'U');
+  check('nửa U2 -> vàng', t.update(s, 'U').status === 'partial');
+  s = applyMove(s, 'F');
+  const p = t.update(s, 'F');
+  check('đụng sang mặt khác -> mới báo sai', p.status === 'off-track', p.status);
+  check('gợi ý sửa gồm cả nửa U đã lỡ vặn', p.fix.join(' ') === "F' U'", p.fix.join(' '));
+}
+
+/* ---- Vặn nhầm hẳn mặt khác ngay từ đầu vẫn phải đỏ ngay ---- */
+{
+  const t = new ScrambleTracker(parseAlg("U2 R F2"));
+  check('vặn mặt hoàn toàn khác -> đỏ ngay', t.update(applyMove(SOLVED_STATE, 'F'), 'F').status === 'off-track');
+}
+
+/* ---- Cả scramble toàn nước 180, vặn từng nửa một, không được đỏ lần nào ---- */
+{
+  const SCR = parseAlg("U2 R2 F2 L2 D2 B2");
+  const t = new ScrambleTracker(SCR);
+  let s = SOLVED_STATE;
+  t.update(s);
+  const seen: string[] = [];
+  for (const m of SCR) {
+    const half = m[0];
+    for (let k = 0; k < 2; k++) {
+      s = applyMove(s, half);
+      seen.push(t.update(s, half).status);
+    }
+  }
+  check('không có lần nào bị báo sai', !seen.includes('off-track'), seen.join(','));
+  check('xen kẽ đúng nhịp vàng rồi xanh',
+    seen.every((st, i) => (i % 2 === 0 ? st === 'partial' : st === 'on-track' || st === 'complete')), seen.join(','));
+  check('kết thúc là xong scramble', t.peek().status === 'complete');
 }
 
 console.log(fails === 0 ? '\nTẤT CẢ ĐỀU PASS' : `\n${fails} TEST LỖI`);
