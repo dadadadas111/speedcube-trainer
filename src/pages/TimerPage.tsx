@@ -3,7 +3,7 @@ import { useApp } from '../store/app';
 import { db, type Solve, type Penalty } from '../store/db';
 import { generateScramble, type ScrambleSource } from '../cube/scramble';
 import { SOLVED_STATE, applyMoves, isSolved, cloneState, type CubeState } from '../cube/cube';
-import { normalizeTimestamps, type LiveMove } from '../smartcube/connection';
+import { cubeLink, normalizeTimestamps, type LiveMove } from '../smartcube/connection';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import { useCubeGyro } from '../smartcube/useCubeGyro';
 import { virtualCube } from '../smartcube/virtual';
@@ -35,6 +35,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const [recent, setRecent] = useState<Solve[]>([]);
 
   const phaseRef = useRef<Phase>('scrambling');
+  const lastMoveAtRef = useRef(0);
   const movesRef = useRef<LiveMove[]>([]);
   const startRef = useRef(0);
   const scrambleRef = useRef<string[]>([]);
@@ -92,6 +93,15 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     rafRef.current = 0;
   };
 
+  /** Kết thúc solve, lấy mốc thời gian từ nước cuối cùng ghi được. */
+  const finishFromMoves = useCallback(() => {
+    const norm = normalizeTimestamps(movesRef.current);
+    const t = norm[norm.length - 1]?.t ?? performance.now() - startRef.current;
+    void finishSolveRef.current?.(t, movesRef.current, 'smartcube');
+  }, []);
+
+  const finishSolveRef = useRef<((t: number, m: LiveMove[], s: 'smartcube' | 'manual') => Promise<void>) | null>(null);
+
   const finishSolve = useCallback(
     async (timeMs: number, moves: LiveMove[], source: 'smartcube' | 'manual') => {
       stopRaf();
@@ -125,6 +135,12 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         if (phaseRef.current === 'scrambling' && trackerRef.current) {
           setProgress(trackerRef.current.update(s));
         }
+        // Chốt chặn thứ hai cho việc dừng đồng hồ. Nếu vì lý do gì đó sự kiện
+        // nước cuối bị lỡ mà cube tự gửi trạng thái về báo đã giải, vẫn dừng —
+        // mốc thời gian lấy theo nước cuối cùng nhận được nên vẫn chính xác.
+        if (phaseRef.current === 'running' && isSolved(s) && movesRef.current.length > 2) {
+          finishFromMoves();
+        }
       },
       onMove: (m, state) => {
         const p = phaseRef.current;
@@ -144,6 +160,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         if (p === 'ready' || p === 'inspecting') {
           movesRef.current = [m];
           startRef.current = performance.now();
+          lastMoveAtRef.current = performance.now();
           setPhaseBoth('running');
           setInspectLeft(0);
           rafRef.current = requestAnimationFrame(tick);
@@ -152,11 +169,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
         if (p === 'running') {
           movesRef.current.push(m);
-          if (isSolved(state)) {
-            const norm = normalizeTimestamps(movesRef.current);
-            const t = norm[norm.length - 1]?.t ?? performance.now() - startRef.current;
-            void finishSolve(t, movesRef.current, 'smartcube');
-          }
+          lastMoveAtRef.current = performance.now();
+          if (isSolved(state)) finishFromMoves();
         }
       },
     },
@@ -239,6 +253,25 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     };
   }, [usingCube, tick, finishSolve, setPhaseBoth]);
 
+  useEffect(() => {
+    finishSolveRef.current = finishSolve;
+  }, [finishSolve]);
+
+  /**
+   * Chốt chặn thứ ba: đang chạy mà im tay một lúc thì hỏi lại cube xem đã giải
+   * xong chưa. Bắt được cả trường hợp mất hẳn sự kiện nước cuối, mà không bao
+   * giờ dừng nhầm vì chỉ dừng khi chính cube báo là đã giải.
+   */
+  useEffect(() => {
+    if (phase !== 'running' || cubeStatus !== 'connected') return;
+    const id = setInterval(() => {
+      // Chỉ hỏi khi tay đã ngừng một lúc — lúc đang quay liên tục thì không cần,
+      // và cũng để khỏi làm nghẽn đường bluetooth giữa lúc giải.
+      if (performance.now() - lastMoveAtRef.current > 1000) void cubeLink.resync();
+    }, 700);
+    return () => clearInterval(id);
+  }, [phase, cubeStatus]);
+
   useEffect(() => () => stopRaf(), []);
 
   /* ---------- dẫn xuất ---------- */
@@ -277,11 +310,16 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
   if (phase === 'running') {
     return (
-      <div className="flex min-h-[70vh] flex-col items-center justify-center">
-        <div className="tnum font-mono text-[clamp(4rem,16vw,11rem)] font-semibold leading-none text-ink-100">
+      <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6">
+        <div className="tnum font-mono text-[clamp(3.5rem,14vw,10rem)] font-semibold leading-none text-ink-100">
           {formatTime(display)}
         </div>
-        <p className="mt-6 text-sm text-ink-400">
+        {usingCube && (
+          // Khối ảo chạy theo khối thật ngay lúc giải — cũng là cách nhìn thấy
+          // ngay nếu bluetooth rớt nước, vì lúc đó hai bên sẽ lệch nhau.
+          <CubeView state={cubeState} size={150} quaternion={quaternion} interactive={false} />
+        )}
+        <p className="text-sm text-ink-400">
           {usingCube ? 'Giải xong là đồng hồ tự dừng.' : 'Bấm phím bất kỳ để dừng.'}
         </p>
       </div>

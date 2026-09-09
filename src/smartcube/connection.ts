@@ -9,6 +9,7 @@
 import { connectGanCube, cubeTimestampLinearFit, type GanCubeConnection, type GanCubeEvent, type GanCubeMove } from 'gan-web-bluetooth';
 import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isPlausibleState, cloneState, type CubeState } from '../cube/cube';
 import { MAC_STORAGE_KEY, normalizeMac } from './mac';
+import { isFreshSerial } from './serial';
 
 export { normalizeMac, savedMacs, forgetMac } from './mac';
 
@@ -63,6 +64,8 @@ export class CubeLink {
   driftCount = 0;
   /** Số gói trạng thái giải mã ra rác; >0 nghĩa là MAC nhiều khả năng sai */
   garbledCount = 0;
+  /** Số thứ tự của nước cuối cùng đã áp; dùng để bỏ qua ảnh chụp trạng thái cũ */
+  private lastSerial: number | null = null;
   /** Đặt true khi người dùng cho phép hỏi tay địa chỉ MAC */
   askForMac: ((deviceName: string) => Promise<string | null>) | null = null;
 
@@ -113,6 +116,11 @@ export class CubeLink {
     }
   }
 
+  /** Quên số thứ tự đang theo dõi; gọi khi bắt đầu một lượt mới. */
+  resetSerial(): void {
+    this.lastSerial = null;
+  }
+
   async disconnect(): Promise<void> {
     this.sub?.unsubscribe();
     this.sub = null;
@@ -146,6 +154,7 @@ export class CubeLink {
   private handle(e: GanCubeEvent) {
     switch (e.type) {
       case 'MOVE': {
+        this.lastSerial = e.serial;
         this.state = applyMove(this.state, e.move);
         const lm: LiveMove = {
           move: e.move,
@@ -170,6 +179,10 @@ export class CubeLink {
           for (const l of this.listeners) l.garbled?.();
           break;
         }
+        // Ảnh chụp trạng thái cũ hơn nước đã áp thì bỏ qua, nếu không sẽ kéo lùi
+        // trạng thái của app (xem smartcube/serial.ts).
+        if (!isFreshSerial(e.serial, this.lastSerial)) break;
+        this.lastSerial = e.serial;
         // Cube là nguồn sự thật. Nếu lệch thì đã có nước bị rớt qua bluetooth —
         // đếm lại để giao diện còn cảnh báo người dùng.
         if (toKociemba(this.state) !== e.facelets) this.driftCount++;

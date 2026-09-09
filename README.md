@@ -28,7 +28,13 @@ cube, app dẫn bạn vặn từng nước: nước tiếp theo hiện to, nư�
 tiến độ. Vặn sai là báo ngay và **chỉ luôn cần vặn ngược lại những gì** để quay về đúng
 chỗ — không phải giải lại từ đầu. Xong scramble thì đồng hồ tự chạy từ nước đầu tiên và
 tự dừng đúng lúc khối được giải, lấy mốc thời gian từ đồng hồ trong cube (chính xác hơn
-đồng hồ máy vì không dính độ trễ bluetooth). Có +2, DNF, inspection, nhiều phiên tập.
+đồng hồ máy vì không dính độ trễ bluetooth). Lúc đang giải app hiện luôn khối ảo chạy
+theo khối thật — cũng là cách thấy ngay nếu bluetooth rớt nước.
+
+Việc dừng đồng hồ có **ba lớp**, vì rớt một gói tin là hỏng cả lần giải:
+nước cuối làm khối về trạng thái đã giải; hoặc chính cube gửi trạng thái về báo đã giải;
+hoặc tay đã ngừng hơn một giây thì app chủ động hỏi lại cube. Mốc thời gian luôn lấy theo
+nước cuối cùng ghi được nên dù dừng bằng lớp nào thì giờ vẫn đúng. Có +2, DNF, inspection, nhiều phiên tập.
 
 Việc dò tiến độ so khớp theo khoá bất biến-với-phép-quay, nên **bạn cầm khối kiểu gì cũng
 được** — chỉ cần thực hiện đúng ký hiệu trong hệ quy chiếu của chính mình. Khoá này vẫn
@@ -197,7 +203,7 @@ coi là "chưa xong" và cả LSE bị dồn thành một cục ở cuối. Gi�
 ## Kiểm thử
 
 ```bash
-npm test            # 264 khẳng định, chạy trong vài giây
+npm test            # 276 khẳng định, chạy trong vài giây
 npm run check:lse   # duyệt toàn bộ 184.320 trạng thái của nhóm LSE ⟨M, U⟩
 ```
 
