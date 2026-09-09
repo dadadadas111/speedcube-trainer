@@ -32,50 +32,58 @@ export default function App() {
     setTab('solves');
   };
 
+  const go = (id: Tab) => {
+    setTab(id);
+    if (id !== 'solves') setReplayId(null);
+    window.scrollTo({ top: 0 });
+  };
+
   if (!ready) {
     return <div className="grid min-h-screen place-items-center text-sm text-ink-400">Đang mở dữ liệu…</div>;
   }
 
   return (
-    <div className="flex min-h-screen">
-      {/* Bọc thêm một lớp để nền thanh điều hướng kéo hết chiều cao trang,
-          còn phần nội dung bên trong vẫn dính theo màn hình khi cuộn. */}
-      <div className="w-14 shrink-0 border-r border-ink-800 bg-ink-850 sm:w-[168px]">
-        <nav className="sticky top-0 flex h-screen flex-col items-center gap-1 py-3 sm:items-stretch sm:px-2">
-        <div className="mb-4 px-1.5 sm:px-2">
-          <div className="flex gap-[3px]">
-            <span className="size-2.5 rounded-[2px] bg-cube-blue" />
-            <span className="size-2.5 rounded-[2px] bg-cube-green" />
-            <span className="size-2.5 rounded-[2px] bg-cube-red" />
+    <div className="flex min-h-screen flex-col sm:flex-row">
+      {/* Trên điện thoại thanh điều hướng nằm dưới đáy như app thường thấy, để
+          không ăn mất chiều ngang vốn đã hẹp. Từ sm trở lên mới là cột bên trái. */}
+      <div className="hidden shrink-0 border-r border-ink-800 bg-ink-850 sm:block sm:w-[168px]">
+        <nav className="sticky top-0 flex h-screen flex-col gap-1 px-2 py-3">
+          <div className="mb-4 px-2">
+            <div className="flex gap-[3px]">
+              <span className="size-2.5 rounded-[2px] bg-cube-blue" />
+              <span className="size-2.5 rounded-[2px] bg-cube-green" />
+              <span className="size-2.5 rounded-[2px] bg-cube-red" />
+            </div>
+            <p className="mt-2 text-[13px] font-semibold leading-tight">
+              Speedcube
+              <br />
+              Trainer
+            </p>
           </div>
-          <p className="mt-2 hidden text-[13px] font-semibold leading-tight sm:block">
-            Speedcube
-            <br />
-            Trainer
-          </p>
-        </div>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => {
-              setTab(t.id);
-              if (t.id !== 'solves') setReplayId(null);
-            }}
-            title={t.label}
-            className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-              tab === t.id ? 'bg-ink-700 text-ink-100' : 'text-ink-300 hover:bg-ink-800'
-            }`}
-          >
-            <span className="w-4 text-center text-base leading-none">{t.icon}</span>
-            <span className="hidden sm:inline">{t.label}</span>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => go(t.id)}
+              title={t.label}
+              className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                tab === t.id ? 'bg-ink-700 text-ink-100' : 'text-ink-300 hover:bg-ink-800'
+              }`}
+            >
+              <span className="w-4 text-center text-base leading-none">{t.icon}</span>
+              <span>{t.label}</span>
             </button>
           ))}
         </nav>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-800 px-4 py-2.5 sm:px-6">
+      <div className="flex min-w-0 flex-1 flex-col pb-[4.25rem] sm:pb-0">
+        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-ink-800 px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-2">
+            <span className="flex gap-[3px] sm:hidden">
+              <span className="size-2.5 rounded-[2px] bg-cube-blue" />
+              <span className="size-2.5 rounded-[2px] bg-cube-green" />
+              <span className="size-2.5 rounded-[2px] bg-cube-red" />
+            </span>
             <label className="text-[13px] text-ink-400" htmlFor="session-select">
               Phiên
             </label>
@@ -95,7 +103,7 @@ export default function App() {
           <CubeStatus />
         </header>
 
-        <main className="min-w-0 flex-1 p-4 sm:p-6">
+        <main className="min-w-0 flex-1 p-3 sm:p-6">
           {tab === 'timer' && <TimerPage onOpenSolve={openSolve} />}
           {tab === 'solves' &&
             (replayId != null ? (
@@ -108,6 +116,24 @@ export default function App() {
           {tab === 'settings' && <SettingsPage />}
         </main>
       </div>
+
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 flex border-t border-ink-800 bg-ink-850 pb-[env(safe-area-inset-bottom)] sm:hidden"
+        aria-label="Điều hướng"
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => go(t.id)}
+            className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
+              tab === t.id ? 'text-cube-blue' : 'text-ink-400'
+            }`}
+          >
+            <span className="text-lg leading-none">{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

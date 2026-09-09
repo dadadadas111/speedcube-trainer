@@ -156,10 +156,32 @@ cùng một trạng thái khối, chỉ khác nhau đúng một phép quay toàn
 có cách nào biết. Chỗ đó ký hiệu sẽ hiện `L`. (Về lý thuyết có thể dùng con quay hồi
 chuyển để đoán, nhưng lúc giải nhanh tay rung nhiều nên không đáng tin.)
 
+## Một lỗi mà chỉ cube thật mới lộ ra
+
+Đồng nhất thức đầy đủ là **`M = R L' x'`**. Bản đầu tiên gộp `R` + `L'` thành `M` nhưng
+bỏ quên vế `x'`: mô hình bị xoay đi, trong khi **mọi nước sau đó vẫn được áp theo hệ quy
+chiếu cũ**. Trạng thái hỏng hẳn chứ không chỉ lệch một phép quay, nên không bước nào được
+nhận ra và phần phân bổ bước trống trơn.
+
+Bộ test dữ liệu giả lập lọt lưới vì trong đó hai nửa của mỗi nước `M` cách nhau ~250ms nên
+chưa bao giờ chạm tới đường gộp. Cube thật báo về cách nhau **6–121ms**. Giờ trong repo có
+một solve thật làm fixture hồi quy
+([src/analysis/fixtures/realSolve.ts](src/analysis/fixtures/realSolve.ts)).
+
+Cách sửa: mỗi lần dựng lại được một nước lát cắt thì **liên hợp toàn bộ các nước còn lại**
+theo phép quay tương ứng — đúng là hàm nghịch đảo của
+[src/cube/sensorSim.ts](src/cube/sensorSim.ts). Kết quả sai khác trạng thái thật nhiều nhất
+một phép quay toàn khối, điều mà mọi phần phân tích đều chịu được.
+
+Lỗi thứ hai lộ ra cùng lúc: điều kiện của bước EO và 4b đòi bốn góc phải đúng **cả vị trí
+xoay của lớp U**. Nhưng trong LSE người giải xoay lớp U liên tục, nên góc gần như luôn bị
+coi là "chưa xong" và cả LSE bị dồn thành một cục ở cuối. Giờ hai bước đó dùng bộ khung
+24 hướng × 4 vị trí AUF (xoay lớp U không đụng tới hai khối nên vẫn an toàn).
+
 ## Kiểm thử
 
 ```bash
-npm test            # 193 khẳng định, chạy trong vài giây
+npm test            # 227 khẳng định, chạy trong vài giây
 npm run check:lse   # duyệt toàn bộ 184.320 trạng thái của nhóm LSE ⟨M, U⟩
 ```
 
@@ -177,7 +199,8 @@ bước chỉ dùng nhóm nước bảo toàn các bước trước. Ba phép ki
 - Kết quả **không đổi** trên dòng nước đã mô phỏng đúng cách cảm biến báo về.
 
 Ngoài ra bộ sinh dữ liệu thử đã chạy 60 solve Roux ngẫu nhiên hợp lệ: không biên bước nào
-bị bỏ sót.
+bị bỏ sót. Và có một solve THẬT lấy từ cube làm fixture hồi quy — dữ liệu giả lập không
+bắt được lỗi gộp lát cắt, chỉ cube thật mới lộ (xem mục ngay trên).
 
 Bộ dẫn vặn scramble có test riêng cho các tình huống thật: vặn đúng, vặn nhầm mặt đối
 diện, vặn sai chiều, lạc nhiều nước rồi sửa theo gợi ý, vặn lùi, và mất kết nối giữa

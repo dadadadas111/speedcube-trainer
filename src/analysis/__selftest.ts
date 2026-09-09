@@ -37,7 +37,10 @@ console.log('  phát hiện:', got);
 for (const k of Object.keys(B) as (keyof typeof B)[]) {
   // EO có thể xong sớm hơn nước cuối của bước 4a: nếu chỉ còn lát M lệch 90 độ
   // thì các cạnh đã đúng chiều rồi, phần còn lại thuộc về 4c.
-  check(`phát hiện ${k}`, got[k] === B[k], `${got[k]}`);
+  // 4b có thể xong sớm hơn nước cuối của bước: nước U cuối cùng chỉ là AUF,
+  // hai cạnh UL/UR đã vào đúng chỗ từ trước đó rồi.
+  if (k === 'LR') check('phát hiện 4b không muộn hơn lúc dựng', got[k] <= B[k] && got[k] > B.EO, `${got[k]} vs ${B[k]}`);
+  else check(`phát hiện ${k}`, got[k] === B[k], `${got[k]}`);
 }
 
 // Tiêu chí EO: phải bất biến dưới đúng nhóm nước của bước 4b là ⟨M2, U⟩
@@ -92,3 +95,25 @@ check('biên bước khớp sau khi quy đổi số sự kiện',
   JSON.stringify(det.map(d => d.endIndex + mBefore(d.endIndex))));
 
 console.log(fails === 0 ? '\nTẤT CẢ ĐỀU PASS' : `\n${fails} TEST LỖI`);
+
+/* ---- Bộ khung có AUF: dùng cho các bước LSE, nơi lớp U xoay liên tục ---- */
+{
+  const { ROTATIONS_WITH_AUF } = await import('./method');
+  const cmll = ROUX_STAGES[2].test;
+  const anyStrict = (s: Uint8Array) => ROTATIONS.some((r) => cmll(s, r));
+  const anyAuf = (s: Uint8Array) => ROTATIONS_WITH_AUF.some((r) => cmll(s, r));
+
+  check('bộ khung AUF gồm 96 hoán vị', ROTATIONS_WITH_AUF.length === 96, String(ROTATIONS_WITH_AUF.length));
+  check('khối đã giải: cả hai bộ đều thấy góc đã xong', anyStrict(SOLVED_STATE) && anyAuf(SOLVED_STATE));
+
+  // Xoay lớp U của khối đã giải: góc vẫn "xong theo nghĩa CMLL", chỉ là chưa AUF
+  for (const u of ['U', "U'", 'U2']) {
+    const s = applyMoves(SOLVED_STATE, [u]);
+    check(`sau ${u}: bộ chặt coi là CHƯA xong góc`, !anyStrict(s));
+    check(`sau ${u}: bộ có AUF coi là đã xong góc`, anyAuf(s));
+  }
+  // Nhưng xoay một mặt khác thì phá góc thật, cả hai bộ đều phải thấy
+  check('sau R: cả hai bộ đều thấy góc chưa xong', !anyStrict(applyMoves(SOLVED_STATE, ['R'])) && !anyAuf(applyMoves(SOLVED_STATE, ['R'])));
+  // Bộ có AUF không được nới lỏng phần hai khối
+  check('bộ có AUF vẫn bắt buộc hai khối phải xong', !anyAuf(applyMoves(SOLVED_STATE, ['D'])));
+}

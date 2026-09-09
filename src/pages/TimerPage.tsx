@@ -359,7 +359,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         </section>
 
         <section className="panel p-5">
-          <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
             <div>
               <div className="tnum font-mono text-[clamp(2.75rem,8vw,5rem)] font-semibold leading-none">
                 {lastSolve && lastSolve.penalty === 'DNF' ? 'DNF' : formatTime(display)}
@@ -399,7 +399,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         </section>
       </div>
 
-      <section className="panel flex max-h-[calc(100vh-8.5rem)] flex-col overflow-hidden">
+      <section className="panel flex max-h-[60vh] flex-col overflow-hidden xl:max-h-[calc(100vh-8.5rem)]">
         <header className="flex items-baseline justify-between border-b border-ink-700 px-4 py-3">
           <h2 className="text-sm font-semibold">Solve trong phiên</h2>
           <span className="tnum text-[13px] text-ink-400">{recent.length}</span>

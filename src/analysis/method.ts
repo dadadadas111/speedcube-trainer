@@ -8,7 +8,37 @@
  */
 
 import { type CubeState, PIECES, F2L_SLOTS, LSE_UD_FACELETS, U_CENTER_FACELET, groupSolved, isSolved } from '../cube/cube';
-import { ROTATIONS } from '../cube/geometry';
+import { ROTATIONS, MOVE_PERMS, composePerm, IDENTITY_PERM } from '../cube/geometry';
+
+/**
+ * 24 hướng cầm khối, nhân thêm 4 vị trí xoay của lớp U.
+ *
+ * Cần cho các bước LSE: lúc đó người giải xoay lớp U liên tục, nên bốn góc tuy
+ * đã giải xong về mặt CMLL nhưng hiếm khi đang nằm đúng vị trí cuối cùng. Nếu
+ * đòi đúng cả AUF thì EO và 4b gần như không bao giờ khớp cho tới khi giải hết,
+ * và toàn bộ LSE bị dồn thành một cục.
+ *
+ * Xoay lớp U không đụng tới hai khối nên dùng bộ này cho các bước đó vẫn an toàn.
+ */
+export const ROTATIONS_WITH_AUF: Uint8Array[] = (() => {
+  const out: Uint8Array[] = [];
+  const seen = new Set<string>();
+  for (const rot of ROTATIONS) {
+    let u: Uint8Array = IDENTITY_PERM as Uint8Array;
+    for (let k = 0; k < 4; k++) {
+      // Soi qua hướng cầm khối TRƯỚC, rồi mới xoay lớp U — ngược thứ tự thì
+      // hoá ra đang xoay lớp U của hệ quy chiếu thô chứ không phải của người giải.
+      const p = composePerm(rot, u);
+      const key = p.join(',');
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(p);
+      }
+      u = composePerm(u, MOVE_PERMS['U']);
+    }
+  }
+  return out;
+})();
 
 export type MethodName = 'roux' | 'cfop';
 
@@ -18,6 +48,11 @@ export interface StageSpec {
   /** Mô tả ngắn để hiện trong phần đánh giá */
   hint: string;
   test: (s: CubeState, rot: Uint8Array) => boolean;
+  /**
+   * Cho phép lớp U đang ở vị trí xoay bất kỳ. Bật cho các bước LSE, vì lúc đó
+   * lớp U xoay liên tục nhưng bốn góc vẫn coi như đã xong.
+   */
+  allowAuf?: boolean;
 }
 
 const rouxFB = (s: CubeState, rot: Uint8Array) => groupSolved(s, rot, PIECES.FB);
@@ -59,8 +94,8 @@ export const ROUX_STAGES: StageSpec[] = [
   { key: 'FB', label: 'First Block', hint: 'Khối 1x2x3 bên trái — chủ yếu là nhìn trước và lập kế hoạch', test: rouxFB },
   { key: 'SB', label: 'Second Block', hint: 'Khối 1x2x3 bên phải — nhìn trước + hiệu quả r/M', test: rouxSB },
   { key: 'CMLL', label: 'CMLL', hint: 'Xoay + hoán vị 4 góc lớp trên — nhận dạng + thuộc alg', test: rouxCMLL },
-  { key: 'EO', label: 'LSE 4a (EO)', hint: 'Chỉnh chiều 6 cạnh còn lại', test: rouxEO },
-  { key: 'LR', label: 'LSE 4b (UL/UR)', hint: 'Đưa hai cạnh UL, UR về chỗ', test: rouxLR },
+  { key: 'EO', label: 'LSE 4a (EO)', hint: 'Chỉnh chiều 6 cạnh còn lại', test: rouxEO, allowAuf: true },
+  { key: 'LR', label: 'LSE 4b (UL/UR)', hint: 'Đưa hai cạnh UL, UR về chỗ', test: rouxLR, allowAuf: true },
   { key: 'L4C', label: 'LSE 4c (lát M)', hint: 'Hoàn tất lát giữa', test: (s) => isSolved(s) },
 ];
 
@@ -108,8 +143,9 @@ export function detectStages(states: CubeState[], specs: StageSpec[]): StageDete
   for (const spec of specs) {
     let found = -1;
     let rotation: Uint8Array | null = null;
+    const frames = spec.allowAuf ? ROTATIONS_WITH_AUF : ROTATIONS;
     for (let i = from; i < states.length && found < 0; i++) {
-      for (const rot of ROTATIONS) {
+      for (const rot of frames) {
         if (spec.test(states[i], rot)) {
           found = i;
           rotation = rot;
