@@ -51,6 +51,17 @@ Vào drill: app dựng case, chờ bạn vặn khối về đúng case rồi t�
 app dựng biểu đồ thời gian trung vị của **từng nước** trong alg và chỉ ra nước nào bạn
 hay khựng — thường là chỗ phải đổi cách cầm.
 
+Thư viện xếp hai tầng **họ → case** (bấm Sune rồi mới chọn case bên trong), kèm ô tìm
+kiếm và số case đã luyện của từng họ, để còn dùng được khi có hàng trăm alg. Họ nào chỉ
+có một case thì bấm là chọn luôn, không phải mở ra.
+
+**App tự nhận ra case.** Khi bạn dán một alg vào, app tính ra hướng và hoán vị của bốn
+góc lớp trên rồi tự xếp vào đúng họ, đồng thời báo nếu bạn đã có alg khác giải cùng case
+đó. Việc này thuần tính toán chứ không dựa vào tên ai đặt — ví dụ Niklas được máy xếp
+cùng họ với Sune, không phải do gõ tay. Chữ ký case được chuẩn hoá theo AUF, nên thêm
+nước U trước alg vẫn ra đúng một case; còn thêm U *sau* alg thì là case khác thật, vì
+đích của CMLL là bốn góc về đúng chỗ so với hai khối.
+
 ## Khi app và khối thật lệch nhau
 
 Hai kiểu lệch, hai cách xử lý khác nhau, đều có nút riêng ở trang Bấm giờ và trong Cài đặt:
@@ -106,7 +117,7 @@ chuyển để đoán, nhưng lúc giải nhanh tay rung nhiều nên không đ�
 ## Kiểm thử
 
 ```bash
-npm test            # 134 khẳng định, chạy trong vài giây
+npm test            # 154 khẳng định, chạy trong vài giây
 npm run check:lse   # duyệt toàn bộ 184.320 trạng thái của nhóm LSE ⟨M, U⟩
 ```
 

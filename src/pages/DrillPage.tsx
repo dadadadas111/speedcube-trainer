@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/app';
 import { db, type AlgEntry, type Rep } from '../store/db';
 import { SEED_ALGS } from '../data/seedAlgs';
-import { formatAlg, invertAlg, isValidAlg, parseAlg } from '../cube/alg';
+import AlgLibrary from '../components/AlgLibrary';
+import { classifyCornerAlg, describeFamily } from '../analysis/cornerCase';
+import { formatAlg, invertAlg, parseAlg } from '../cube/alg';
 import { cleanMoveStream } from '../cube/moveStream';
 import { SOLVED_STATE, applyMoves, canonicalKey, cloneState, type CubeState } from '../cube/cube';
 import { DrillMatcher, caseStateFor, summarizeDrill, type DrillRepData, type MoveStat } from '../analysis/drill';
@@ -29,13 +31,18 @@ export default function DrillPage() {
   const [algs, setAlgs] = useState<AlgEntry[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [reps, setReps] = useState<Rep[]>([]);
+  const [repCounts, setRepCounts] = useState<Map<number, number>>(new Map());
   const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     await seedOnce();
     const rows = await db.algs.orderBy('createdAt').toArray();
     setAlgs(rows);
-    setSelectedId((cur) => cur ?? rows[0]?.id ?? null);
+    setSelectedId((cur) => (cur != null && rows.some((r) => r.id === cur) ? cur : (rows[0]?.id ?? null)));
+    // đếm số lần đã drill cho từng alg, để thư viện chỉ ra chỗ còn bỏ trống
+    const counts = new Map<number, number>();
+    await db.reps.each((r) => counts.set(r.algId, (counts.get(r.algId) ?? 0) + 1));
+    setRepCounts(counts);
   }, []);
 
   useEffect(() => {
@@ -48,14 +55,6 @@ export default function DrillPage() {
   }, [selectedId, revision]);
 
   const selected = algs.find((a) => a.id === selectedId) ?? null;
-  const groups = useMemo(() => {
-    const m = new Map<string, AlgEntry[]>();
-    for (const a of algs) {
-      if (!m.has(a.group)) m.set(a.group, []);
-      m.get(a.group)!.push(a);
-    }
-    return [...m.entries()];
-  }, [algs]);
 
   const removeAlg = async (id: number) => {
     await db.reps.where('algId').equals(id).delete();
@@ -66,35 +65,27 @@ export default function DrillPage() {
 
   return (
     <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="panel flex max-h-[calc(100vh-8rem)] flex-col overflow-hidden">
-        <header className="flex items-center justify-between border-b border-ink-700 px-3 py-2.5">
-          <h2 className="text-sm font-semibold">Thư viện alg</h2>
-          <button className="btn btn-ghost !px-2 !py-0.5 !text-[13px]" onClick={() => setAdding(true)}>
-            Thêm
-          </button>
-        </header>
-        <div className="overflow-y-auto py-1">
-          {groups.map(([group, items]) => (
-            <div key={group} className="mb-1">
-              <p className="px-3 py-1.5 text-[12px] font-medium text-ink-400">{group}</p>
-              {items.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => setSelectedId(a.id!)}
-                  className={`block w-full px-3 py-1.5 text-left text-[13px] ${
-                    selectedId === a.id ? 'bg-ink-700 text-ink-100' : 'text-ink-200 hover:bg-ink-800'
-                  }`}
-                >
-                  {a.name}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-      </aside>
+      <AlgLibrary
+        algs={algs}
+        repCounts={repCounts}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        onAdd={() => setAdding(true)}
+      />
 
       <div className="flex flex-col gap-5">
-        {adding && <AlgForm onClose={() => setAdding(false)} onSaved={() => { setAdding(false); void load(); }} usingCube={usingCube} keyboard={settings.keyboardCube} />}
+        {adding && (
+          <AlgForm
+            algs={algs}
+            onClose={() => setAdding(false)}
+            onSaved={() => {
+              setAdding(false);
+              void load();
+            }}
+            usingCube={usingCube}
+            keyboard={settings.keyboardCube}
+          />
+        )}
         {selected ? (
           <AlgDetail
             key={selected.id}
@@ -116,11 +107,13 @@ export default function DrillPage() {
 /* ------------------------------------------------------------------ */
 
 function AlgForm({
+  algs,
   onClose,
   onSaved,
   usingCube,
   keyboard,
 }: {
+  algs: AlgEntry[];
   onClose: () => void;
   onSaved: () => void;
   usingCube: boolean;
@@ -128,6 +121,8 @@ function AlgForm({
 }) {
   const [name, setName] = useState('');
   const [group, setGroup] = useState('CMLL');
+  const [family, setFamily] = useState('');
+  const [familyTouched, setFamilyTouched] = useState(false);
   const [text, setText] = useState('');
   const [recording, setRecording] = useState(false);
   const recorded = useRef<{ move: string; t: number }[]>([]);
@@ -143,28 +138,73 @@ function AlgForm({
     keyboard,
   );
 
-  const valid = text.trim() !== '' && isValidAlg(text) && name.trim() !== '';
+  /** Phân loại case của mọi alg đang có, để đối chiếu với alg đang nhập. */
+  const known = useMemo(
+    () =>
+      algs.map((a) => {
+        try {
+          return { entry: a, info: classifyCornerAlg(parseAlg(a.alg)) };
+        } catch {
+          return { entry: a, info: null };
+        }
+      }),
+    [algs],
+  );
+
+  const parsed = useMemo(() => {
+    try {
+      return text.trim() ? parseAlg(text) : null;
+    } catch {
+      return null;
+    }
+  }, [text]);
+
+  const info = useMemo(() => (parsed ? classifyCornerAlg(parsed) : null), [parsed]);
+  const sameCase = useMemo(
+    () => (info ? known.filter((k) => k.info?.full === info.full) : []),
+    [known, info],
+  );
+  const sameFamily = useMemo(
+    () => (info ? known.filter((k) => k.info?.family === info.family) : []),
+    [known, info],
+  );
+
+  // Tự điền họ theo alg đã có cùng nhóm, chừng nào người dùng chưa tự gõ
+  useEffect(() => {
+    if (familyTouched || !sameFamily.length) return;
+    const counts = new Map<string, number>();
+    for (const k of sameFamily) counts.set(k.entry.family, (counts.get(k.entry.family) ?? 0) + 1);
+    const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (best) {
+      setFamily(best[0]);
+      setGroup(sameFamily[0].entry.group);
+    }
+  }, [sameFamily, familyTouched]);
+
+  const families = useMemo(() => [...new Set(algs.map((a) => a.family))].sort(), [algs]);
+  const groups = useMemo(() => [...new Set(algs.map((a) => a.group))].sort(), [algs]);
+  const valid = !!parsed && parsed.length > 0 && name.trim() !== '' && family.trim() !== '';
 
   const save = async () => {
-    await db.algs.add({ name: name.trim(), group: group.trim() || 'Khác', alg: formatAlg(parseAlg(text)), createdAt: Date.now() });
+    if (!parsed) return;
+    await db.algs.add({
+      name: name.trim(),
+      group: group.trim() || 'Khác',
+      family: family.trim(),
+      alg: formatAlg(parsed),
+      createdAt: Date.now(),
+    });
     onSaved();
   };
 
   return (
     <section className="panel p-5">
       <h2 className="text-base font-semibold">Thêm alg</h2>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="field-label" htmlFor="alg-name">Tên</label>
-          <input id="alg-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ví dụ: CMLL Sune trái" />
-        </div>
-        <div>
-          <label className="field-label" htmlFor="alg-group">Nhóm</label>
-          <input id="alg-group" className="input" value={group} onChange={(e) => setGroup(e.target.value)} placeholder="CMLL / LSE / ..." />
-        </div>
-      </div>
-      <div className="mt-3">
-        <label className="field-label" htmlFor="alg-text">Ký hiệu</label>
+
+      <div className="mt-4">
+        <label className="field-label" htmlFor="alg-text">
+          Ký hiệu
+        </label>
         <input
           id="alg-text"
           className="input font-mono"
@@ -172,10 +212,85 @@ function AlgForm({
           onChange={(e) => setText(e.target.value)}
           placeholder="R U R' U R U2 R'"
         />
-        {text.trim() !== '' && !isValidAlg(text) && (
-          <p className="mt-1.5 text-[13px] text-bad">Có nước không hiểu được. Dùng ký hiệu chuẩn: R U R' U2 M' r ...</p>
+        {text.trim() !== '' && !parsed && (
+          <p className="mt-1.5 text-[13px] text-bad">
+            Có nước không hiểu được. Dùng ký hiệu chuẩn: R U R' U2 M' r ...
+          </p>
+        )}
+        {info && (
+          <div className="mt-2 text-[13px]">
+            <p className="text-ink-300">
+              Nhận ra case: <span className="text-ink-100">{describeFamily(info.family)}</span>
+              {!info.preservesBlocks && <span className="ml-2 text-warn">alg này phá hai khối Roux</span>}
+            </p>
+            {sameCase.length > 0 && (
+              <p className="mt-1 text-warn">
+                Bạn đã có alg giải đúng case này: {sameCase.map((k) => `${k.entry.family} · ${k.entry.name}`).join(', ')}
+              </p>
+            )}
+            {sameCase.length === 0 && sameFamily.length > 0 && (
+              <p className="mt-1 text-good">
+                Cùng họ với: {[...new Set(sameFamily.map((k) => k.entry.family))].join(', ')} — đã điền sẵn ô Họ.
+              </p>
+            )}
+          </div>
         )}
       </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div>
+          <label className="field-label" htmlFor="alg-group">
+            Mảng
+          </label>
+          <input
+            id="alg-group"
+            className="input"
+            list="alg-groups"
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            placeholder="CMLL"
+          />
+          <datalist id="alg-groups">
+            {groups.map((g) => (
+              <option key={g} value={g} />
+            ))}
+          </datalist>
+        </div>
+        <div>
+          <label className="field-label" htmlFor="alg-family">
+            Họ
+          </label>
+          <input
+            id="alg-family"
+            className="input"
+            list="alg-families"
+            value={family}
+            onChange={(e) => {
+              setFamily(e.target.value);
+              setFamilyTouched(true);
+            }}
+            placeholder="Sune"
+          />
+          <datalist id="alg-families">
+            {families.map((f) => (
+              <option key={f} value={f} />
+            ))}
+          </datalist>
+        </div>
+        <div>
+          <label className="field-label" htmlFor="alg-name">
+            Tên case
+          </label>
+          <input
+            id="alg-name"
+            className="input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="chéo, trái, phải..."
+          />
+        </div>
+      </div>
+
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button className="btn btn-primary" disabled={!valid} onClick={() => void save()}>
           Lưu
@@ -185,7 +300,7 @@ function AlgForm({
         </button>
         {usingCube && (
           <button
-            className={`btn ${recording ? '!border-bad !text-bad' : ''}`}
+            className={'btn ' + (recording ? '!border-bad !text-bad' : '')}
             onClick={() => {
               if (!recording) recorded.current = [];
               setRecording(!recording);
@@ -309,7 +424,9 @@ function AlgDetail({
       <section className="panel p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-[13px] text-ink-400">{alg.group}</p>
+            <p className="text-[13px] text-ink-400">
+              {alg.group} · {alg.family}
+            </p>
             <h2 className="text-xl font-semibold">{alg.name}</h2>
           </div>
           <button className="btn btn-danger !py-1 !text-[13px]" onClick={onDelete}>

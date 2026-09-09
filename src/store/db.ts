@@ -3,6 +3,7 @@
 import Dexie, { type Table } from 'dexie';
 import type { TimedMove } from '../cube/moveStream';
 import type { MethodName } from '../analysis/method';
+import { SEED_ALGS } from '../data/seedAlgs';
 
 export type Penalty = 'none' | '+2' | 'DNF';
 
@@ -29,8 +30,12 @@ export interface Solve {
 
 export interface AlgEntry {
   id?: number;
-  name: string;
+  /** Mảng lớn: CMLL, LSE, PLL... */
   group: string;
+  /** Họ case, ví dụ Sune, Anti-Sune, EOLR — đây là tầng người dùng bấm vào trước */
+  family: string;
+  /** Tên case cụ thể trong họ */
+  name: string;
   alg: string;
   createdAt: number;
   notes?: string;
@@ -68,6 +73,34 @@ class TrainerDB extends Dexie {
       reps: '++id, algId, date',
       settings: 'key',
     });
+    // Thư viện alg tách thêm một tầng "họ" để còn dùng được khi có hàng trăm alg.
+    // Alg cũ chưa có họ thì lấy luôn tên nó làm họ.
+    this.version(2)
+      .stores({
+        sessions: '++id, name, createdAt',
+        solves: '++id, sessionId, date',
+        algs: '++id, group, family, name, createdAt',
+        reps: '++id, algId, date',
+        settings: 'key',
+      })
+      .upgrade((tx) =>
+        tx
+          .table<AlgEntry>('algs')
+          .toCollection()
+          .modify((a) => {
+            if (a.family) return;
+            // Alg mẫu cũ thì xếp lại theo họ mới; alg người dùng tự thêm thì lấy
+            // luôn tên nó làm họ, không đoán hộ.
+            const seed = SEED_ALGS.find((x) => x.alg === a.alg);
+            if (seed) {
+              a.group = seed.group;
+              a.family = seed.family;
+              a.name = seed.name;
+            } else {
+              a.family = a.name;
+            }
+          }),
+      );
   }
 }
 
