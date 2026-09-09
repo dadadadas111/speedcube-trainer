@@ -282,9 +282,12 @@ Bản chạy thật: **https://cube.dash.id.vn**
 Mỗi lần push lên `main`, GitHub Actions
 ([.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)) sẽ:
 
-1. `npm ci` → `npm run typecheck` → `npm test` (109 khẳng định) → `npm run build`
+1. `npm ci` → `npm run typecheck` → `npm test` → `npm run build`
 2. Nếu tất cả xanh mới rsync thư mục `dist/` lên server
 3. Gọi thử lại site, không trả về 200 thì báo hỏng
+
+Bước rsync thử lại tối đa 4 lần: đường mạng từ runner của GitHub tới VPS thỉnh thoảng
+rớt gói (biểu hiện là `connection timed out`), không liên quan gì tới code.
 
 Pull request chỉ chạy bước 1 — không deploy.
 

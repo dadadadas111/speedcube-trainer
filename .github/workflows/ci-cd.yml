@@ -70,20 +70,33 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      # Đường mạng từ runner của GitHub tới VPS thỉnh thoảng rớt gói, biểu hiện
+      # là "connection timed out". Không phải lỗi phía app, nên chỉ cần thử lại
+      # thay vì để cả lần deploy hỏng. ConnectTimeout ngắn để hỏng thì hỏng nhanh.
       - name: Đẩy bản build lên server
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          rsync -az --delete --checksum \
-            -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" \
-            dist/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          set +e
+          for attempt in 1 2 3 4; do
+            echo "--- lần thử $attempt ---"
+            rsync -az --delete --checksum \
+              -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3" \
+              dist/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+            code=$?
+            [ $code -eq 0 ] && echo "đẩy xong ở lần thử $attempt" && exit 0
+            echo "lần thử $attempt hỏng (mã $code), chờ rồi thử lại"
+            sleep $((attempt * 10))
+          done
+          echo "Đã thử 4 lần vẫn không nối được tới server."
+          exit 1
 
       - name: Kiểm tra site còn sống
         run: |
-          for i in 1 2 3 4 5; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' https://cube.dash.id.vn/ || echo 000)
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' https://cube.dash.id.vn/ || echo 000)
             echo "lần $i: HTTP $code"
             [ "$code" = "200" ] && exit 0
             sleep 5
