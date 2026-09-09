@@ -7,7 +7,7 @@
  */
 
 import { connectGanCube, cubeTimestampLinearFit, type GanCubeConnection, type GanCubeEvent, type GanCubeMove } from 'gan-web-bluetooth';
-import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isPlausibleState, cloneState, type CubeState } from '../cube/cube';
+import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isPlausibleState, isSolved, cloneState, type CubeState } from '../cube/cube';
 import { MAC_STORAGE_KEY, normalizeMac } from './mac';
 import { isFreshSerial } from './serial';
 
@@ -116,11 +116,6 @@ export class CubeLink {
     }
   }
 
-  /** Quên số thứ tự đang theo dõi; gọi khi bắt đầu một lượt mới. */
-  resetSerial(): void {
-    this.lastSerial = null;
-  }
-
   async disconnect(): Promise<void> {
     this.sub?.unsubscribe();
     this.sub = null;
@@ -131,19 +126,66 @@ export class CubeLink {
     this.emitStatus();
   }
 
-  /** Yêu cầu cube gửi lại trạng thái thật (đồng bộ lại nếu lỡ mất nước). */
+  /**
+   * Yêu cầu cube gửi lại trạng thái thật. Xoá mốc số thứ tự trước khi hỏi, vì
+   * đây là yêu cầu do người dùng chủ động bấm nên câu trả lời phải luôn được
+   * nhận, kể cả khi bộ lọc gói cũ tưởng nhầm là lạc hậu.
+   */
   async resync(): Promise<void> {
+    this.lastSerial = null;
     await this.conn?.sendCubeCommand({ type: 'REQUEST_FACELETS' });
+  }
+
+  /** Chờ gói trạng thái kế tiếp từ cube, hoặc hết giờ. */
+  private nextState(timeoutMs = 1200): Promise<CubeState | null> {
+    return new Promise((resolve) => {
+      let done = false;
+      const off = this.on({
+        state: (s, fromCube) => {
+          if (done || !fromCube) return;
+          done = true;
+          off();
+          resolve(s);
+        },
+      });
+      setTimeout(() => {
+        if (done) return;
+        done = true;
+        off();
+        resolve(null);
+      }, timeoutMs);
+    });
   }
 
   get connected(): boolean {
     return this.status === 'connected';
   }
 
-  /** Báo cho cube biết trạng thái hiện tại của nó là "đã giải". */
-  async resetToSolved(): Promise<void> {
-    await this.conn?.sendCubeCommand({ type: 'REQUEST_RESET' });
+  /**
+   * Báo cho cube biết vị trí hiện tại của nó chính là trạng thái đã giải.
+   *
+   * Đây là cách duy nhất chữa được khi CHÍNH CUBE nhớ sai (bạn tháo lắp, hoặc
+   * nó bỏ sót nước của chính nó) — lúc đó hỏi lại cube bao nhiêu lần cũng chỉ
+   * nhận về đúng cái sai đó. Sau khi đặt lại thì hỏi lại để xác nhận cube đã
+   * thật sự nhận, thay vì báo thành công một cách mù quáng.
+   *
+   * @returns true nếu cube xác nhận đang ở trạng thái đã giải
+   */
+  async resetToSolved(): Promise<boolean> {
+    if (!this.conn) {
+      this.lastSerial = null;
+      this.setState(cloneState(SOLVED_STATE), true);
+      return true;
+    }
+    await this.conn.sendCubeCommand({ type: 'REQUEST_RESET' });
+    this.lastSerial = null;
     this.setState(cloneState(SOLVED_STATE), true);
+
+    const pending = this.nextState();
+    await this.conn.sendCubeCommand({ type: 'REQUEST_FACELETS' });
+    const confirmed = await pending;
+    if (!confirmed) return isSolved(this.state); // cube không trả lời, tạm tin bản đặt lại
+    return isSolved(confirmed);
   }
 
   private setState(s: CubeState, fromCube: boolean) {

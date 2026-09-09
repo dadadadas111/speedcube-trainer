@@ -379,8 +379,11 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
                 <ScrambleHint progress={progress} notReady={!!notReady} />
               )}
 
-              {usingCube && phase === 'scrambling' && (progress?.status === 'off-track' || notReady) && (
-                <div className="mt-4">
+              {usingCube && (phase === 'scrambling' || phase === 'done') && (
+                <div className="mt-4 border-t border-ink-800 pt-3">
+                  <p className="mb-1.5 text-[12px] text-ink-500">
+                    App hiển thị khác khối thật?
+                  </p>
                   <CubeSync compact />
                 </div>
               )}

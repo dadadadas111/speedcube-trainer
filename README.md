@@ -128,14 +128,20 @@ nói thẳng là MAC sai thay vì để bạn ngồi đoán. Vào Cài đặt xo
 
 ## Khi app và khối thật lệch nhau
 
-Hai kiểu lệch, hai cách xử lý khác nhau, đều có nút riêng ở trang Bấm giờ và trong Cài đặt:
+Hai kiểu lệch, hai cách xử lý khác nhau. Cả hai nút luôn có sẵn: ở trang Bấm giờ, trong
+nút *Đồng bộ* trên thanh trên cùng (nên chỗ nào trong app cũng với tới được), và trong
+Cài đặt.
 
-- **App lệch so với cube** — rớt nước qua bluetooth. Cube vẫn biết đúng, chỉ cần
-  *Hỏi lại cube*. App cũng tự sửa mỗi khi cube gửi trạng thái về, và đếm số lần lệch.
-- **Chính cube lệch so với thực tế** — bạn tháo lắp khối, hoặc cube bỏ sót nước của chính
-  nó. Lúc này phải giải khối về trạng thái đã giải rồi bấm *Khối đang đã giải* để nói cho
-  cube biết. Nút này có hỏi lại trước khi làm, vì bấm nhầm lúc khối chưa giải sẽ làm mọi
-  thứ sau đó sai hết.
+- **App lệch so với cube** — rớt nước qua bluetooth. Cube vẫn nhớ đúng, chỉ cần
+  *Hỏi lại cube*.
+- **Chính cube nhớ sai** — bạn tháo lắp khối, hoặc cube bỏ sót nước của chính nó. Lúc này
+  hỏi lại bao nhiêu lần cũng chỉ nhận về đúng cái sai đó. Phải giải khối về trạng thái đã
+  giải rồi bấm *Khối đang đã giải → đồng bộ*. App gửi lệnh đặt lại cho cube **rồi hỏi lại
+  để xác nhận** cube đã thật sự nhận, chứ không báo thành công một cách mù quáng.
+
+App tự sửa theo cube mỗi khi cube gửi trạng thái về, nhưng chỉ nhận gói **mới hơn** nước
+đã áp gần nhất — gói cũ đến muộn mà ghi đè thì sẽ kéo lùi trạng thái, và đó chính là lý do
+trước đây đồng hồ có lúc không tự dừng khi giải xong.
 
 ## Hiển thị khối
 

@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/app';
 import { cubeLink } from '../smartcube/connection';
 import MacPrompt from './MacPrompt';
+import CubeSync from './CubeSync';
 
 export default function CubeStatus() {
   const { cubeStatus, cubeInfo, settings } = useApp();
   const [error, setError] = useState<string | null>(null);
   const [garbled, setGarbled] = useState(false);
   const [macAsk, setMacAsk] = useState<{ deviceName: string; resolve: (mac: string | null) => void } | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
   const asked = useRef(false);
 
   // Thư viện gọi hàm này khi không tự đọc được MAC. Trả về một Promise để chờ
@@ -62,13 +64,29 @@ export default function CubeStatus() {
             {cubeInfo?.name ?? 'Cube'}
             {cubeInfo?.battery != null && <span className="tnum text-ink-400">{cubeInfo.battery}%</span>}
           </span>
-          <button
-            className="btn btn-ghost !px-2 !py-1 !text-[13px]"
-            onClick={() => void cubeLink.resync()}
-            title="Đồng bộ lại trạng thái khối"
-          >
-            Đồng bộ
-          </button>
+          <div className="relative">
+            <button
+              className="btn btn-ghost !px-2 !py-1 !text-[13px]"
+              onClick={() => setSyncOpen((v) => !v)}
+              aria-expanded={syncOpen}
+              title="App hiển thị khác khối thật?"
+            >
+              Đồng bộ
+            </button>
+            {syncOpen && (
+              // Để ở thanh trên cùng nên chỗ nào trong app cũng với tới được,
+              // không phải quay về trang bấm giờ mới chữa được lệch trạng thái.
+              <div className="panel absolute right-0 z-50 mt-2 w-[min(92vw,26rem)] p-4">
+                <div className="mb-2 flex items-baseline justify-between">
+                  <h3 className="text-sm font-semibold">Đồng bộ với khối thật</h3>
+                  <button className="btn btn-ghost !px-1.5 !py-0 !text-[13px]" onClick={() => setSyncOpen(false)}>
+                    Đóng
+                  </button>
+                </div>
+                <CubeSync />
+              </div>
+            )}
+          </div>
           <button className="btn btn-ghost !px-2 !py-1 !text-[13px]" onClick={() => void cubeLink.disconnect()}>
             Ngắt
           </button>
