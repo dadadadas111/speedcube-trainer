@@ -111,6 +111,48 @@ export function fromKociemba(str: string): CubeState {
 
 const F = (pos: Vec3) => faceletsOfCubie(pos);
 
+/** Mọi cubie của khối, mỗi phần tử là danh sách facelet của nó. */
+export const ALL_CUBIES: number[][] = (() => {
+  const out: number[][] = [];
+  for (const x of [-1, 0, 1])
+    for (const y of [-1, 0, 1])
+      for (const z of [-1, 0, 1]) {
+        const fs = faceletsOfCubie([x, y, z] as Vec3);
+        if (fs.length) out.push(fs);
+      }
+  return out;
+})();
+
+/**
+ * Các miếng của từng bước, giữ nguyên theo từng cubie (không gộp phẳng).
+ * Dùng để tô sáng CHÍNH những miếng đó dù chúng đang nằm ở đâu trên khối, chứ
+ * không phải tô sáng cái vùng mà chúng sẽ về.
+ */
+export const PIECE_GROUPS: Record<string, number[][]> = {
+  FB: [F([-1, -1, -1]), F([-1, -1, 0]), F([-1, -1, 1]), F([-1, 0, -1]), F([-1, 0, 1])],
+  SB: [F([1, -1, -1]), F([1, -1, 0]), F([1, -1, 1]), F([1, 0, -1]), F([1, 0, 1])],
+  U_CORNERS: [F([-1, 1, -1]), F([-1, 1, 1]), F([1, 1, -1]), F([1, 1, 1])],
+  UL_UR: [F([-1, 1, 0]), F([1, 1, 0])],
+  LSE_EDGES: [F([-1, 1, 0]), F([1, 1, 0]), F([0, 1, 1]), F([0, 1, -1]), F([0, -1, 1]), F([0, -1, -1])],
+  CROSS: [F([0, -1, 1]), F([0, -1, -1]), F([-1, -1, 0]), F([1, -1, 0])],
+};
+
+const colorKey = (colors: number[]) => [...colors].sort((a, b) => a - b).join('');
+
+/**
+ * Facelet của những miếng thuộc một nhóm, tìm theo MÀU nên bắt được chúng dù
+ * đang nằm lung tung giữa lúc giải. `viewed` phải là trạng thái đã quay về hệ
+ * quy chiếu hiển thị.
+ */
+export function piecesByColor(groups: number[][], viewed: CubeState): number[] {
+  const wanted = new Set(groups.map((g) => colorKey(g.map((f) => Math.floor(f / 9)))));
+  const out: number[] = [];
+  for (const cubie of ALL_CUBIES) {
+    if (wanted.has(colorKey(cubie.map((f) => viewed[f])))) out.push(...cubie);
+  }
+  return out;
+}
+
 export const PIECES = {
   /** First Block của Roux: khối 1x2x3 bên trái dưới (không tính tâm L). */
   FB: [F([-1, -1, -1]), F([-1, -1, 0]), F([-1, -1, 1]), F([-1, 0, -1]), F([-1, 0, 1])].flat(),

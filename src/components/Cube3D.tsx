@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyPerm, type CubeState } from '../cube/cube';
-import { FACELET_NORMAL, FACELET_POS } from '../cube/geometry';
+import { FACELET_NORMAL, FACELET_POS, moveTurn } from '../cube/geometry';
 import { FACE_COLORS } from './palette';
 
 export interface Quaternion {
@@ -28,8 +28,20 @@ interface Props {
   quaternion?: Quaternion | null;
   /** Cho kéo chuột để xoay (mặc định bật) */
   interactive?: boolean;
+  /**
+   * Đang quay dở một nước: `state` là trạng thái TRƯỚC nước đó, còn lớp liên
+   * quan sẽ được vẽ nghiêng theo `progress` (0 tới 1).
+   */
+  animate?: { move: string; progress: number } | null;
   className?: string;
 }
+
+/**
+ * Hệ toạ độ CSS có trục Y hướng xuống, nên phép quay quanh X và Z bị đảo dấu so
+ * với hệ mô hình, còn quanh Y thì giữ nguyên.
+ */
+const CSS_AXIS = ['rotateX', 'rotateY', 'rotateZ'] as const;
+const CSS_SIGN = [-1, 1, -1];
 
 /** Góc nhìn mặc định: thấy được mặt trên, mặt trước và mặt phải. */
 const DEFAULT_VIEW = { rx: -22, ry: -32 };
@@ -103,12 +115,20 @@ export default function Cube3D({
   size = 200,
   quaternion,
   interactive = true,
+  animate = null,
   className = '',
 }: Props) {
   const shown = useMemo(() => (viewRotation ? applyPerm(state, viewRotation) : state), [state, viewRotation]);
   const hl = useMemo(() => (highlight ? new Set(highlight) : null), [highlight]);
   const [view, setView] = useState(DEFAULT_VIEW);
   const drag = useRef<{ x: number; y: number; rx: number; ry: number } | null>(null);
+
+  const turn = useMemo(() => (animate ? moveTurn(animate.move) : null), [animate]);
+  const layerTransform = useMemo(() => {
+    if (!turn || !animate) return '';
+    const deg = turn.quarters * 90 * animate.progress * CSS_SIGN[turn.axis];
+    return `${CSS_AXIS[turn.axis]}(${deg}deg) `;
+  }, [turn, animate]);
 
   const unit = size / 5;
   const sticker = unit * 0.9;
@@ -217,7 +237,9 @@ export default function Cube3D({
                 opacity: dim ? 0.26 : 1,
                 borderRadius: unit * 0.14,
                 boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.28)',
-                transform: `translate3d(${(p[0] + n[0] * out) * unit}px, ${-(p[1] + n[1] * out) * unit}px, ${(p[2] + n[2] * out) * unit}px) ${faceRotation(n)}`,
+                // Phép quay của lớp đặt TRƯỚC nên nó tác dụng trong hệ của cả khối,
+                // đúng như một lớp đang xoay quanh trục của nó.
+                transform: `${turn?.inLayer(i) ? layerTransform : ''}translate3d(${(p[0] + n[0] * out) * unit}px, ${-(p[1] + n[1] * out) * unit}px, ${(p[2] + n[2] * out) * unit}px) ${faceRotation(n)}`,
               }}
             />
           );

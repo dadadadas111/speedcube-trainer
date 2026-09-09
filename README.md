@@ -47,8 +47,12 @@ riêng biệt — vặn `U2` thì sau nhịp đầu trạng thái khối chưa k
 Vặn `U'` khi cần `U2` cũng là vàng: vặn thêm `U'` nữa là đủ 180 độ, không phải quay lại.
 
 **2. Xem lại từng bước.** Mỗi solve được tách thành FB → SB → CMLL → EO → 4b → 4c
-(hoặc Cross → F2L → OLL → PLL). Phát lại đúng nhịp thật, tự dừng ở cuối mỗi bước, tua
-từng nước, xem khối ở mọi thời điểm với các miếng của bước hiện tại được tô sáng.
+(hoặc Cross → F2L → OLL → PLL). Phát lại đúng nhịp thật với **lớp quay có hoạt hình** để
+mắt kịp theo, tự dừng ở cuối mỗi bước, tua từng nước.
+
+Phần tô sáng bám theo **chính những miếng** của bước đó — tìm theo màu chứ không phải
+theo vị trí — nên lúc đang dựng First Block bạn thấy đúng 5 miếng ấy sáng lên dù chúng
+còn nằm rải rác khắp khối, rồi theo dõi chúng dồn về chỗ.
 Dải "từng nước" cho thấy ô nào rộng (lâu) và chỗ nào bị tính là dừng tay.
 
 **3. Xem lại và chấm điểm từng nước.** Kiểu xem lại ván cờ, nhưng thang đo là
@@ -193,7 +197,7 @@ coi là "chưa xong" và cả LSE bị dồn thành một cục ở cuối. Gi�
 ## Kiểm thử
 
 ```bash
-npm test            # 245 khẳng định, chạy trong vài giây
+npm test            # 264 khẳng định, chạy trong vài giây
 npm run check:lse   # duyệt toàn bộ 184.320 trạng thái của nhóm LSE ⟨M, U⟩
 ```
 

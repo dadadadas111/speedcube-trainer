@@ -105,6 +105,45 @@ const BASE_MOVES: Record<string, LayerDef> = {
 
 export const BASE_MOVE_NAMES = Object.keys(BASE_MOVES);
 
+export interface MoveTurn {
+  /** 0 = x, 1 = y, 2 = z */
+  axis: 0 | 1 | 2;
+  /** Số phần tư vòng theo quy tắc bàn tay phải trong hệ toạ độ mô hình */
+  quarters: number;
+  /** Facelet này có nằm trong lớp đang quay không */
+  inLayer: (facelet: number) => boolean;
+}
+
+/**
+ * Mô tả hình học của một nước, để vẽ hoạt hình lớp đang quay.
+ * Trả về null nếu không hiểu nước đó.
+ */
+export function moveTurn(move: string): MoveTurn | null {
+  const suffix = move.endsWith('2') ? 2 : move.endsWith("'") ? -1 : 1;
+  const base = move.replace(/['2]$/, '');
+  const def = BASE_MOVES[base];
+  if (!def) return null;
+  return {
+    axis: def.axis,
+    quarters: def.quarters * suffix,
+    inLayer: (facelet: number) => {
+      const v = FACELET_POS[facelet][def.axis];
+      return v >= def.min && v <= def.max;
+    },
+  };
+}
+
+/** Quay một vector quanh trục theo góc bất kỳ (độ), dùng cho hoạt hình dở dang. */
+export function rotateVecDegrees(v: Vec3, axis: number, degrees: number): Vec3 {
+  const r = (degrees * Math.PI) / 180;
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  const [x, y, z] = v;
+  if (axis === 0) return [x, y * c - z * s, y * s + z * c];
+  if (axis === 1) return [x * c + z * s, y, -x * s + z * c];
+  return [x * c - y * s, x * s + y * c, z];
+}
+
 function buildPerm(def: LayerDef, quarters: number): Uint8Array {
   const perm = new Uint8Array(54);
   for (let i = 0; i < 54; i++) {

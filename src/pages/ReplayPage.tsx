@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/app';
 import { db, type Solve } from '../store/db';
 import { parseAlg } from '../cube/alg';
+import { applyPerm } from '../cube/cube';
 import { analyzeSolveRecord, analyzeMany } from '../analysis/pipeline';
 import { buildMoveBaseline, reviewSolve, VERDICT_COLORS, type MoveRating, type SolveReview } from '../analysis/moveReview';
-import { stepFacelets } from '../analysis/method';
+import { stepHighlight } from '../analysis/method';
 import { effectiveTime, formatSeconds, formatTime } from '../analysis/stats';
 import CubeView from '../components/CubeView';
 import StepRibbon from '../components/StepRibbon';
@@ -22,6 +23,8 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [pauseAtSteps, setPauseAtSteps] = useState(true);
+  const [anim, setAnim] = useState<{ move: string; progress: number } | null>(null);
+  const animRef = useRef(0);
   const [viewMode, setViewMode] = useState<'3d' | 'net' | null>(null);
   const timerRef = useRef<number | null>(null);
 
@@ -62,7 +65,57 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
 
   const total = analysis?.moves.length ?? 0;
 
-  // Phát lại theo đúng nhịp thật của solve
+  /** Nhìn thấy lớp quay thì dễ theo dõi hơn nhiều so với ảnh nhảy cóc. */
+  const animMs = useCallback(
+    (moveIndex: number) => {
+      if (!analysis) return 120;
+      const prevT = moveIndex === 0 ? 0 : analysis.moves[moveIndex - 1].t;
+      const gap = (analysis.moves[moveIndex]?.t ?? prevT + 200) - prevT;
+      // Bám theo nhịp thật nhưng luôn đủ dài để mắt kịp thấy, và không lê thê
+      return Math.min(320, Math.max(90, (gap / speed) * 0.75));
+    },
+    [analysis, speed],
+  );
+
+  const stopAnim = useCallback(() => {
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    animRef.current = 0;
+    setAnim(null);
+  }, []);
+
+  /** Nhảy tới một vị trí; đi đúng một nước tiến thì vẽ hoạt hình lớp quay. */
+  const seek = useCallback(
+    (target: number, animated = false) => {
+      stopAnim();
+      if (!analysis) return;
+      const clamped = Math.max(0, Math.min(total, target));
+      if (!animated || clamped !== index + 1) {
+        setIndex(clamped);
+        return;
+      }
+      const move = analysis.moves[index].move;
+      const duration = animMs(index);
+      const t0 = performance.now();
+      const tick = () => {
+        const progress = Math.min(1, (performance.now() - t0) / duration);
+        setAnim({ move, progress });
+        if (progress < 1) {
+          animRef.current = requestAnimationFrame(tick);
+        } else {
+          animRef.current = 0;
+          setAnim(null);
+          setIndex(clamped);
+          // Chỉ dừng khi vừa ĐI TỚI một biên bước. Để việc này ở effect riêng thì
+          // nó dừng ngay cả khi bạn đang đứng sẵn ở biên và mới bấm phát.
+          if (pauseAtSteps && clamped < total && boundaries.includes(clamped)) setPlaying(false);
+        }
+      };
+      animRef.current = requestAnimationFrame(tick);
+    },
+    [analysis, index, total, animMs, stopAnim, pauseAtSteps, boundaries],
+  );
+
+  // Phát lại theo đúng nhịp thật của solve, trừ đi phần thời gian dành cho hoạt hình
   useEffect(() => {
     if (!playing || !analysis) return;
     if (index >= total) {
@@ -70,16 +123,15 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
       return;
     }
     const prevT = index === 0 ? 0 : analysis.moves[index - 1].t;
-    const delay = Math.min(2500, Math.max(40, (analysis.moves[index].t - prevT) / speed));
-    timerRef.current = window.setTimeout(() => {
-      const next = index + 1;
-      setIndex(next);
-      if (pauseAtSteps && boundaries.includes(next) && next < total) setPlaying(false);
-    }, delay);
+    const gap = Math.min(2500, Math.max(40, (analysis.moves[index].t - prevT) / speed));
+    const wait = Math.max(0, gap - animMs(index));
+    timerRef.current = window.setTimeout(() => seek(index + 1, true), wait);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [playing, index, analysis, speed, total, pauseAtSteps, boundaries]);
+  }, [playing, index, analysis, speed, total, animMs, seek]);
+
+  useEffect(() => () => stopAnim(), [stopAnim]);
 
   if (!solve) return <p className="text-sm text-ink-400">Đang tải…</p>;
 
@@ -101,15 +153,18 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
   }
 
   const state = analysis.states[index];
-  const highlight = currentStep ? stepFacelets(currentStep.key) : null;
+  // Tô sáng theo MÀU của miếng, trên trạng thái đã quay về hệ hiển thị — nhờ vậy
+  // thấy đúng những miếng của bước đó dù chúng còn đang nằm rải rác trên khối.
+  const viewed = viewRotation ? applyPerm(state, viewRotation) : state;
+  const highlight = currentStep ? stepHighlight(currentStep.key, viewed) : null;
   const v = verdict(analysis);
   const elapsed = index === 0 ? 0 : analysis.moves[index - 1].t;
 
   const jumpToStep = (key: string) => {
     const s = analysis.steps.find((x) => x.key === key);
     if (s) {
-      setIndex(s.startIndex);
       setPlaying(false);
+      seek(s.startIndex);
     }
   };
 
@@ -136,6 +191,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
               highlight={highlight}
               size={240}
               force={viewMode ?? undefined}
+              animate={anim}
               interactive
             />
           </div>
@@ -161,12 +217,12 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
             <p className="tnum mt-0.5 font-mono text-lg">{formatSeconds(elapsed)}s</p>
           </div>
           <div className="mt-4 flex items-center justify-center gap-1.5">
-            <button className="btn !px-2.5" onClick={() => { setPlaying(false); setIndex(0); }} title="Về đầu">
+            <button className="btn !px-2.5" onClick={() => { setPlaying(false); seek(0); }} title="Về đầu">
               ⏮
             </button>
             <button
               className="btn !px-2.5"
-              onClick={() => { setPlaying(false); setIndex(Math.max(0, index - 1)); }}
+              onClick={() => { setPlaying(false); seek(index - 1); }}
               title="Lùi một nước"
             >
               ◀
@@ -176,12 +232,12 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
             </button>
             <button
               className="btn !px-2.5"
-              onClick={() => { setPlaying(false); setIndex(Math.min(total, index + 1)); }}
+              onClick={() => { setPlaying(false); seek(index + 1, true); }}
               title="Tới một nước"
             >
               ▶
             </button>
-            <button className="btn !px-2.5" onClick={() => { setPlaying(false); setIndex(total); }} title="Về cuối">
+            <button className="btn !px-2.5" onClick={() => { setPlaying(false); seek(total); }} title="Về cuối">
               ⏭
             </button>
           </div>
@@ -225,7 +281,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
               current={review.ratings.find((r) => r.index === index) ?? null}
               onJump={(i) => {
                 setPlaying(false);
-                setIndex(i);
+                seek(i);
               }}
             />
           )}
@@ -250,7 +306,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
               index={index}
               onSeek={(i) => {
                 setPlaying(false);
-                setIndex(i);
+                seek(i);
               }}
             />
           </section>

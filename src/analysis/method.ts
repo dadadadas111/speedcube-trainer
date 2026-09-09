@@ -7,7 +7,7 @@
  * chiếu của mô hình có thể lệch dần so với thực tế trong lúc giải.
  */
 
-import { type CubeState, PIECES, F2L_SLOTS, LSE_UD_FACELETS, U_CENTER_FACELET, groupSolved, isSolved } from '../cube/cube';
+import { type CubeState, PIECES, PIECE_GROUPS, F2L_SLOTS, LSE_UD_FACELETS, U_CENTER_FACELET, groupSolved, isSolved, piecesByColor } from '../cube/cube';
 import { ROTATIONS, MOVE_PERMS, composePerm, IDENTITY_PERM } from '../cube/geometry';
 
 /**
@@ -178,19 +178,30 @@ export function guessMethod(states: CubeState[]): MethodName {
   return rouxFirst / n <= cfopFirst / n ? 'roux' : 'cfop';
 }
 
-/** Facelet của những miếng mà một bước chịu trách nhiệm — dùng để tô sáng khi xem lại. */
-export function stepFacelets(key: string): number[] {
+/**
+ * Những miếng mà một bước chịu trách nhiệm, tìm theo màu trên trạng thái đang
+ * hiển thị — nhờ vậy lúc xem lại bạn thấy chính các miếng đó sáng lên dù chúng
+ * còn đang nằm rải rác, rồi theo dõi chúng dồn về chỗ.
+ */
+export function stepPieceGroups(key: string): number[][] {
   switch (key) {
-    case 'FB': return PIECES.FB;
-    case 'SB': return PIECES.SB;
-    case 'CMLL': return PIECES.U_CORNERS;
+    case 'FB': return PIECE_GROUPS.FB;
+    case 'SB': return PIECE_GROUPS.SB;
+    case 'CMLL': return PIECE_GROUPS.U_CORNERS;
     case 'EO':
-    case 'L4C': return PIECES.LSE_EDGES;
-    case 'LR': return PIECES.UL_UR;
-    case 'CROSS': return PIECES.CROSS;
-    case 'F2L1': case 'F2L2': case 'F2L3': case 'F2L4': return F2L_SLOTS.flat();
+    case 'L4C': return PIECE_GROUPS.LSE_EDGES;
+    case 'LR': return PIECE_GROUPS.UL_UR;
+    case 'CROSS': return PIECE_GROUPS.CROSS;
+    case 'F2L1': case 'F2L2': case 'F2L3': case 'F2L4':
+      return F2L_SLOTS.map((slot) => slot);
     case 'OLL':
-    case 'PLL': return [...Array.from({ length: 9 }, (_, i) => i), ...PIECES.U_CORNERS];
+    case 'PLL': return PIECE_GROUPS.U_CORNERS.concat(PIECE_GROUPS.UL_UR);
     default: return [];
   }
+}
+
+/** Facelet cần tô sáng cho một bước, dựa trên trạng thái đang hiển thị. */
+export function stepHighlight(key: string, viewed: CubeState): number[] {
+  const groups = stepPieceGroups(key);
+  return groups.length ? piecesByColor(groups, viewed) : [];
 }
