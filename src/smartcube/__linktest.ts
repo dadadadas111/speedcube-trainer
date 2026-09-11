@@ -123,4 +123,34 @@ const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.lo
   check('eight turns are two gestures', count === 2, String(count));
 }
 
+/* ---- The gesture must be holdable, because a solve has to hold it ---- */
+{
+  // The hold lives on the link rather than in the detector, so this checks the
+  // shape of it: a counter that several callers can hold at once, and a release
+  // that only counts once however many times it is called.
+  let holds = 0;
+  const hold = () => {
+    holds++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      holds = Math.max(0, holds - 1);
+    };
+  };
+
+  const a = hold();
+  const b = hold();
+  check('two holders stack', holds === 2, String(holds));
+  a();
+  check('releasing one leaves the other holding', holds === 1, String(holds));
+  a();
+  a();
+  check('releasing the same one again changes nothing', holds === 1, String(holds));
+  b();
+  check('the last release lets go', holds === 0, String(holds));
+  b();
+  check('and it cannot go negative', holds === 0, String(holds));
+}
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

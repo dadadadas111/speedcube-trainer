@@ -10,6 +10,7 @@ import { cleanMoveStream } from '../cube/moveStream';
 import { SOLVED_STATE, applyMoves, canonicalKey, cloneState, type CubeState } from '../cube/cube';
 import { DrillMatcher, caseStateFor, summarizeDrill, type DrillRepData, type MoveStat } from '../analysis/drill';
 import { useCubeInput } from '../smartcube/useCubeInput';
+import { cubeLink } from '../smartcube/connection';
 import { virtualCube } from '../smartcube/virtual';
 import CubeView from '../components/CubeView';
 import { formatSeconds } from '../analysis/stats';
@@ -451,6 +452,12 @@ function AlgDetail({
     phaseRef.current = p;
     setPhase(p);
   };
+
+  // A reset in the middle of a timed rep would throw the rep away
+  useEffect(() => {
+    if (phase !== 'armed' && phase !== 'running') return;
+    return cubeLink.holdResetGesture();
+  }, [phase]);
 
   useEffect(() => {
     setPhaseBoth('setup');

@@ -203,10 +203,14 @@ in the app), and in Settings.
   success.
 
 Or, without putting the cube down: solve it and turn **`D` four times**. Four
-quarter turns of one face leave the cube exactly as it was, so nobody ever does
-it while solving or scrambling and there is nothing to confuse it with. The four
-have to run together, in the same direction, within a couple of seconds — turns
-that happen to accumulate across a solve cannot add up to it.
+quarter turns of one face leave the cube exactly as it was, so there is nothing
+to confuse it with. The four have to run together, in the same direction, within
+a couple of seconds — turns that happen to accumulate across a solve cannot add
+up to it.
+
+It is held off entirely while a solve or a drill rep is being timed. "Nobody
+would turn D four times mid-solve" turned out not to be something to rely on,
+and a reset in the middle of a solve throws the solve away.
 
 The app corrects itself from the cube whenever the cube reports a state, but only
 accepts a packet **newer** than the last move applied — a stale packet arriving
@@ -390,7 +394,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 419 assertions, runs in a few seconds
+npm test            # 424 assertions, runs in a few seconds
 npm run test:relay  # the relay, driven through a real socket (needs server/venv)
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```

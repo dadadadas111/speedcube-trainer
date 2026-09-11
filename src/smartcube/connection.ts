@@ -109,6 +109,28 @@ export class CubeLink {
   private budget = new CommandBudget(1500, 4);
   /** Four turns of D in a row means "this cube is solved, take my word for it" */
   private gesture = new ResetGesture();
+  private gestureHolds = 0;
+
+  /**
+   * Stop the four-D gesture from firing until the returned function is called.
+   *
+   * A timed solve has to hold it: the gesture resets the cube, and doing that
+   * in the middle of a solve throws the solve away. The gesture is for when the
+   * app and the cube disagree, which is never while you are mid-solve — and
+   * "you would never turn D four times during a solve" turned out not to be
+   * something to rely on.
+   */
+  holdResetGesture(): () => void {
+    this.gestureHolds++;
+    this.gesture.reset();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.gestureHolds = Math.max(0, this.gestureHolds - 1);
+      this.gesture.reset();
+    };
+  }
 
   private note(kind: string, detail?: string) {
     this.log.push({ t: Date.now(), kind, detail });
@@ -384,7 +406,7 @@ export class CubeLink {
         // Four quarter turns of D leave the cube untouched, so this can be
         // checked before anything else without changing what the move does.
         const at = e.localTimestamp ?? e.timestamp;
-        if (this.gesture.push(e.move, Number.isFinite(at) ? at : performance.now())) {
+        if (this.gestureHolds === 0 && this.gesture.push(e.move, Number.isFinite(at) ? at : performance.now())) {
           this.note('reset-gesture');
           this.notify((l) => l.resetGesture?.());
           void this.resetToSolved();

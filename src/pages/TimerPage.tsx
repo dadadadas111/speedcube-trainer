@@ -281,6 +281,15 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   }, [finishSolve]);
 
   /**
+   * The four-D resync gesture resets the cube, which would throw away the solve
+   * it happened during. While the clock is running it is held off.
+   */
+  useEffect(() => {
+    if (phase !== 'running') return;
+    return cubeLink.holdResetGesture();
+  }, [phase]);
+
+  /**
    * Hands still for a few seconds usually means something went wrong rather
    * than a long think, so offer a way out. This is a screen timer and nothing
    * more — it must never touch the cube, however often it ticks.

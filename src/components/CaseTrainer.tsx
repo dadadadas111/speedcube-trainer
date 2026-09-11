@@ -21,6 +21,7 @@ import { SOLVED_STATE, isSolved, cloneState, type CubeState } from '../cube/cube
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
 import { DrillMatcher, caseStateFor } from '../analysis/drill';
 import { useCubeInput } from '../smartcube/useCubeInput';
+import { cubeLink } from '../smartcube/connection';
 import { useTurnAnimation } from './useTurnAnimation';
 import { formatSeconds } from '../analysis/stats';
 import CubeView from './CubeView';
@@ -163,6 +164,12 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [poolKey]);
+
+  // A reset in the middle of a timed rep would throw the rep away
+  useEffect(() => {
+    if (phase !== 'armed' && phase !== 'running') return;
+    return cubeLink.holdResetGesture();
+  }, [phase]);
 
   // Rebuild the guide whenever a new case comes up
   useEffect(() => {
