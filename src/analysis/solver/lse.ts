@@ -172,21 +172,34 @@ export function lseDistance(scramble: string[], goal: LseGoal = 'solved'): numbe
 }
 
 /**
- * A case to train on: the turns that set it up, and how short the best solution
- * is. `hardest` biases towards the cases actually worth practising — the
- * shortest ones are over before you have looked at them.
+ * How long a case is worth training on.
+ *
+ * The lengths are not evenly spread. 4c splits cleanly in two: ninety-odd
+ * positions needing eight turns or fewer, which is the case set everybody
+ * actually drills, and another ninety-odd needing fourteen to eighteen, which
+ * nobody does. EOLR runs from one to eleven with the bulk in the middle.
+ * Sampling the whole group instead would hand out a seventeen-turn case most of
+ * the time, which is not practice, it is a chore.
  */
-export function randomLseCase(goal: LseGoal, minLength = 4): { setup: string[]; best: number } {
+const BANDS: Record<LseGoal, { min: number; max: number }> = {
+  solved: { min: 2, max: 8 },
+  eolr: { min: 4, max: 10 },
+};
+
+/** A case to train on: the turns that set it up, and how short the best is. */
+export function randomLseCase(goal: LseGoal, band = BANDS[goal]): { setup: string[]; best: number } {
   const t = lseTables();
   const dist = goal === 'solved' ? t.toSolved : t.toEolr;
   const pool: number[] = [];
   for (const key of t.all) {
     const d = dist.get(key) ?? 0;
-    if (d < minLength) continue;
-    // 4c cases are the ones where the edges are already oriented and placed
+    if (d < band.min || d > band.max) continue;
+    // A 4c case is one where the edges are already oriented and placed
     if (goal === 'solved' && (t.toEolr.get(key) ?? 1) !== 0) continue;
     pool.push(key);
   }
   const key = pool[Math.floor(Math.random() * pool.length)];
   return { setup: t.route.get(key)!, best: dist.get(key)! };
 }
+
+export { BANDS as LSE_BANDS };

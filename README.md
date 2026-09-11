@@ -245,6 +245,53 @@ the link was closed by the app or given up by the cube. That last distinction
 matters: nothing in the app can close the link on its own, so a drop that shows
 as `DISCONNECTED BY CUBE` came from the radio, not from here.
 
+## Training: finding the fewest moves
+
+The idea comes from [roux-trainers](https://github.com/onionhoney/roux-trainers)
+— a case, a think, and the shortest answer to compare yourself against. Three
+modes so far:
+
+- **First block** — the shortest 1x2x3 from a full scramble.
+- **EOLR** — orient the six edges and place UL/UR.
+- **LSE 4c** — finish the M slice.
+
+What is added here is the cube. Elsewhere you decide for yourself whether what
+you found matches the solver; here the app watches what you actually turn, and
+when you reach the goal it tells you how long your solution was against the
+shortest one. Knowing you were three moves over is the whole point of the
+exercise and it is the part you cannot check by eye. Thinking time and turning
+time are separated too, since they are different problems.
+
+Without a cube it still deals cases and shows the answer; it just cannot mark
+your work.
+
+**The solutions are exact, not close.** The last six edges need no search at
+all: ⟨M, U⟩ has 184,320 positions, so walking all of them once answers every
+question about them — including how far a position is from having its edges
+oriented, which is a second walk out from every finished position. The first
+block is a depth-first search bounded by two exact tables, 504 arrangements of
+the two corners and 10,560 of the three edges; whichever half is further away is
+a bound that cannot over-estimate, which is what makes the first answer found
+the shortest one.
+
+Two things the solver has to get right to be worth anything:
+
+- **The goal is the block built, not the block built *there*.** Turning the
+  whole cube over is free and nobody counts it, so aiming at one placement makes
+  the solver answer a harder question than the one being asked — it will quote
+  six moves for something a person does in five. The tables are therefore walked
+  outwards from all twenty-four finished placements at once.
+- **The moves are the ones a Roux solver makes**: the six faces and M, half
+  turns counted as one. E and S are legal and would occasionally save a move,
+  but a shortest solution that hinges on an S turn is not something anyone would
+  find or use.
+
+Case lengths are picked to be worth practising. 4c splits cleanly in two —
+ninety-odd positions needing eight turns or fewer, which is the set everybody
+drills, and another ninety-odd needing fourteen to eighteen, which nobody does —
+so sampling the whole group would hand out a seventeen-turn case most of the
+time.
+
 ## A phone as the cube's radio
 
 A computer with no bluetooth adapter can still use the smart cube: the phone
@@ -394,7 +441,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 424 assertions, runs in a few seconds
+npm test            # 446 assertions, runs in a few seconds
 npm run test:relay  # the relay, driven through a real socket (needs server/venv)
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```

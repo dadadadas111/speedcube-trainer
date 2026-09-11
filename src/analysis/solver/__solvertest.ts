@@ -7,9 +7,11 @@
  */
 
 import { parseAlg } from '../../cube/alg';
-import { LSE_MOVES, LSE_TRACKED, lseDistance, lseTables, randomLseCase, solveLse } from './lse';
-import { FB_MOVES, FB_TRACKED, fbTables, firstBlockDone, solveFirstBlock } from './firstBlock';
+import { LSE_BANDS, LSE_MOVES, LSE_TRACKED, lseDistance, lseTables, randomLseCase, solveLse } from './lse';
+import { FB_MOVES, FB_TRACKED, blockBuilt, fbTables, firstBlockDone, solveFirstBlock } from './firstBlock';
 import { MAX_PACKED, isHome, keyOf, mayFollow, positionsAfter, stepped } from './tracking';
+import { ROTATIONS, IDENTITY_PERM } from '../../cube/geometry';
+import { rotationBetween } from '../../cube/alg';
 
 let fails = 0;
 const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.log('FAIL ' + n + (x ? '  <' + x + '>' : '')); } else console.log('ok   ' + n); };
@@ -58,7 +60,7 @@ function anyShorter(
   let bad = 0;
   let notOptimal = 0;
   for (let i = 0; i < 40; i++) {
-    const c = randomLseCase('solved', 2);
+    const c = randomLseCase('solved');
     const sol = solveLse(c.setup, 'solved');
     if (!sol || sol.length !== c.best) { bad++; continue; }
     if (!atHome(positionsAfter(LSE_TRACKED, [...c.setup, ...sol.moves]))) { bad++; continue; }
@@ -75,16 +77,32 @@ function anyShorter(
 
   let eolrBad = 0;
   for (let i = 0; i < 40; i++) {
-    const c = randomLseCase('eolr', 4);
+    const c = randomLseCase('eolr');
     const sol = solveLse(c.setup, 'eolr');
     if (!sol || sol.length !== c.best) { eolrBad++; continue; }
     if (lseDistance([...c.setup, ...sol.moves], 'eolr') !== 0) eolrBad++;
   }
   check('EOLR: forty cases solved, every one reaching the goal', eolrBad === 0, String(eolrBad));
 
-  check('a case is never handed out already finished', randomLseCase('eolr', 4).best >= 4);
+  check('a case is never handed out already finished', randomLseCase('eolr').best >= 4);
+
+  // The long half of the 4c positions is left out on purpose: nobody drills a
+  // seventeen-turn 4c, and sampling the whole group hands one out most times
+  let outOfBand = 0;
+  for (let i = 0; i < 60; i++) {
+    const d = randomLseCase('solved').best;
+    if (d < LSE_BANDS.solved.min || d > LSE_BANDS.solved.max) outOfBand++;
+  }
+  check('4c cases stay in the range people actually train', outOfBand === 0, String(outOfBand));
+
+  let eolrOut = 0;
+  for (let i = 0; i < 60; i++) {
+    const d = randomLseCase('eolr').best;
+    if (d < LSE_BANDS.eolr.min || d > LSE_BANDS.eolr.max) eolrOut++;
+  }
+  check('EOLR cases too', eolrOut === 0, String(eolrOut));
   check('4c cases have their edges oriented and placed already',
-    lseDistance(randomLseCase('solved', 2).setup, 'eolr') === 0);
+    lseDistance(randomLseCase('solved').setup, 'eolr') === 0);
 }
 
 /* ---------------- the first block ---------------- */
@@ -103,10 +121,9 @@ function anyShorter(
     "U F2 L2 D B2 D' B2 F2 U2 R2 B L U' B F R' D' L2 B2",
   ];
 
-  // Element by element: the twelve first-block stickers are more than a single
-  // number can hold, and a key that overflows reports positions as equal that
-  // are not — which is how this check first "found" a solution that did not work
-  const atHome = (at: Uint8Array) => isHome(at, FB_TRACKED);
+  // The same goal the solver aims at: the block built in any of the ways it can
+  // sit on the cube, because turning the whole cube over is free
+  const atHome = blockBuilt;
 
   let wrong = 0;
   let slowest = 0;
@@ -141,6 +158,13 @@ function anyShorter(
   check('and nothing shorter than the answer exists', beaten === 0, String(beaten));
 
   // An algorithm that only touches the top layer leaves the block alone
+  // The goal has to be the one a person means. Building the block "upside down"
+  // is the same piece of work, and a solver that insisted on one placement
+  // would quote six moves for something doable in five.
+  check('a block built in any orientation counts as built',
+    ROTATIONS.every((rot) => blockBuilt(positionsAfter(FB_TRACKED, rotationBetween(IDENTITY_PERM as Uint8Array, rot)))));
+  check('and a scrambled cube does not', !blockBuilt(positionsAfter(FB_TRACKED, parseAlg("R U F' D2 L"))));
+
   check('a T-perm needs no first block moves',
     solveFirstBlock(parseAlg("R U R' U' R' F R2 U' R' U' R U R' F'")).length === 0);
 

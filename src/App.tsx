@@ -6,15 +6,17 @@ import SolvesPage from './pages/SolvesPage';
 import ReplayPage from './pages/ReplayPage';
 import StatsPage from './pages/StatsPage';
 import DrillPage from './pages/DrillPage';
+import TrainingPage from './pages/TrainingPage';
 import SettingsPage from './pages/SettingsPage';
 
-type Tab = 'timer' | 'solves' | 'stats' | 'drill' | 'settings';
+type Tab = 'timer' | 'solves' | 'stats' | 'drill' | 'training' | 'settings';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'timer', label: 'Timer', icon: '⏱' },
   { id: 'solves', label: 'Solves', icon: '≡' },
   { id: 'stats', label: 'Stats', icon: '◲' },
   { id: 'drill', label: 'Drill', icon: '◈' },
+  { id: 'training', label: 'Training', icon: '◎' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
@@ -114,6 +116,7 @@ export default function App() {
             ))}
           {tab === 'stats' && <StatsPage />}
           {tab === 'drill' && <DrillPage />}
+          {tab === 'training' && <TrainingPage />}
           {tab === 'settings' && <SettingsPage />}
         </main>
       </div>
