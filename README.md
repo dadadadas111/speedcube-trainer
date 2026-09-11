@@ -41,6 +41,14 @@ finishing. When a solve ends the clock keeps showing that time rather than
 snapping back to zero, with the step splits, move count and TPS underneath, so
 the feedback is there before you start the next one.
 
+There are two modes, switched above the scramble:
+
+- **speed** — an ordinary timed solve.
+- **slow** — deliberate practice. The clock still runs and is still recorded,
+  but the screen counts **moves** instead, and the review talks about the shape
+  of the solution: moves per step against par, rather than seconds. Watching a
+  clock is the surest way to stop thinking about efficiency.
+
 Stopping the clock has **three layers**, because a single lost packet ruins a
 solve: the last move leaves the cube solved; or the cube itself reports a solved
 state; or your hands have been still for more than a second and the app asks the
@@ -108,6 +116,16 @@ after a `U` — one overall number cannot tell those apart.
 The result reads as a sentence: *"3.23s lost across 5 unusually slow moves. At
 your usual pace on those moves, this solve would have been 14.04s."* With the
 most expensive moves listed, and clicking one jumps straight to it in the replay.
+
+**What it says about a solve.** Several things, not one, and both sides of it.
+A review that only ever points at the worst thing is no use: you cannot tell
+whether the rest went well, or whether the thing being criticised is the thing
+that actually cost you. So it looks across the whole solve — movecount per step,
+each step's share of the time, where the hands stopped, what was recognised
+instantly, which step ran without a single pause — and shows a handful, taking
+from each side in turn so neither drowns the other out. One step gets one remark
+until the others have had their turn, because the same step said twice is one
+remark wasted.
 
 **4. Reports.** Time trend with ao5/ao12, solve structure over time, each step's
 share against a reference profile, pause ratio per step, moves per step. The
@@ -183,6 +201,12 @@ in the app), and in Settings.
   press *Cube is solved → sync*. The app sends the reset command **then asks
   again to confirm** the cube really took it, rather than blindly reporting
   success.
+
+Or, without putting the cube down: solve it and turn **`D` four times**. Four
+quarter turns of one face leave the cube exactly as it was, so nobody ever does
+it while solving or scrambling and there is nothing to confuse it with. The four
+have to run together, in the same direction, within a couple of seconds — turns
+that happen to accumulate across a solve cannot add up to it.
 
 The app corrects itself from the cube whenever the cube reports a state, but only
 accepts a packet **newer** than the last move applied — a stale packet arriving
@@ -358,7 +382,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 362 assertions, runs in a few seconds
+npm test            # 415 assertions, runs in a few seconds
 npm run test:relay  # the relay, driven through a real socket (needs server/venv)
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```

@@ -12,7 +12,7 @@ import CubeView from '../components/CubeView';
 import StepRibbon from '../components/StepRibbon';
 import ScrambleDisplay from '../components/ScrambleDisplay';
 import { stepColor } from '../components/palette';
-import { verdict } from '../components/PostSolve';
+import { reviewSolveOutcome, topRemarks } from '../analysis/review';
 
 const SPEEDS = [0.25, 0.5, 1, 2];
 
@@ -158,7 +158,7 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
   // the step's own pieces light up even while still scattered around the cube.
   const viewed = viewRotation ? applyPerm(state, viewRotation) : state;
   const highlight = currentStep ? stepHighlight(currentStep.key, viewed, analysis.colors) : null;
-  const v = verdict(analysis);
+  const remarks = topRemarks(reviewSolveOutcome(analysis, settings.timerMode));
   const elapsed = index === 0 ? 0 : analysis.moves[index - 1].t;
 
   const jumpToStep = (key: string) => {
@@ -271,9 +271,21 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
               activeKey={currentStep?.key ?? null}
               onSelect={jumpToStep}
             />
-            <p className={`mt-3 text-sm ${v.tone === 'good' ? 'text-good' : v.tone === 'bad' ? 'text-bad' : 'text-warn'}`}>
-              {v.text}
-            </p>
+            <ul className="mt-3 flex flex-col gap-1.5">
+              {remarks.map((r, i) => (
+                <li key={i} className="flex items-baseline gap-2">
+                  <span
+                    className="mt-1.5 inline-block size-1.5 shrink-0 rounded-full"
+                    style={{ background: r.key ? stepColor(r.key) : 'var(--color-ink-400)' }}
+                  />
+                  <span
+                    className={`text-[13px] ${r.tone === 'good' ? 'text-good' : r.tone === 'bad' ? 'text-bad' : 'text-warn'}`}
+                  >
+                    {r.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </section>
 
           {review && (

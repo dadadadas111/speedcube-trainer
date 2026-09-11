@@ -91,6 +91,10 @@ export default function CubeSync({ compact = false }: { compact?: boolean }) {
           <span className="text-ink-300">Cube is solved</span> when the cube itself is wrong — solve it first.
         </p>
       )}
+      <p className="text-[12px] text-ink-500">
+        Or, without putting the cube down: solve it and turn <span className="font-mono text-ink-300">D</span> four
+        times. Four quarter turns of one face change nothing, so nothing else can be mistaken for it.
+      </p>
       {result && <p className={`text-[13px] ${tone[result.tone]}`}>{result.text}</p>}
     </div>
   );

@@ -41,6 +41,20 @@ export default function CubeStatus() {
   // leaving the user to wonder why the on-screen cube is nonsense.
   useEffect(() => cubeLink.on({ garbled: () => setGarbled(true) }), []);
 
+  // The four-D gesture happens with the cube in your hands and your eyes on it,
+  // so say plainly that it landed — otherwise there is no way to tell.
+  const [gestured, setGestured] = useState(false);
+  useEffect(
+    () =>
+      cubeLink.on({
+        resetGesture: () => {
+          setGestured(true);
+          window.setTimeout(() => setGestured(false), 2200);
+        },
+      }),
+    [],
+  );
+
   const connect = async () => {
     setError(null);
     setGarbled(false);
@@ -137,6 +151,12 @@ export default function CubeStatus() {
           </div>
         )}
       </div>
+
+      {gestured && (
+        <span className="pop-in rounded-full border border-good px-2 py-0.5 text-[12px] text-good">
+          Synced — cube taken as solved
+        </span>
+      )}
 
       {garbled && (
         <span className="max-w-[34ch] text-[12px] text-bad">

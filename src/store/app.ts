@@ -25,6 +25,16 @@ export interface Settings {
   cubeView: '3d' | 'net';
   /** Let the on-screen cube follow the real cube's gyroscope */
   useGyro: boolean;
+  /**
+   * What the timer is for right now.
+   *
+   * 'speed' is an ordinary timed solve. 'slow' is deliberate practice: the
+   * clock still runs and is recorded, but the screen shows the move count
+   * instead, and the review talks about the shape of the solution rather than
+   * how long it took — because watching a clock is the surest way to stop
+   * thinking about efficiency.
+   */
+  timerMode: 'speed' | 'slow';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -39,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keyboardCube: false,
   cubeView: '3d',
   useGyro: false,
+  timerMode: 'speed',
 };
 
 interface AppState {

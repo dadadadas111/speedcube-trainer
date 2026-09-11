@@ -11,6 +11,7 @@ import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isPlausibleState, is
 import { MAC_STORAGE_KEY, normalizeMac } from './mac';
 import { isFreshSerial } from './serial';
 import { CommandBudget, notifyAll } from './dispatch';
+import { ResetGesture } from './gesture';
 
 export { normalizeMac, savedMacs, forgetMac } from './mac';
 
@@ -49,6 +50,8 @@ export interface LiveMove {
 
 type Listener = {
   move?: (m: LiveMove, state: CubeState) => void;
+  /** The four-D gesture was made and the cube has been told it is solved */
+  resetGesture?: () => void;
   /**
    * Every event exactly as the cube reported it, before any interpretation.
    * Used by a phone bridging to a computer, which forwards them untouched.
@@ -104,6 +107,8 @@ export class CubeLink {
    * giving up until the cube does something again.
    */
   private budget = new CommandBudget(1500, 4);
+  /** Four turns of D in a row means "this cube is solved, take my word for it" */
+  private gesture = new ResetGesture();
 
   private note(kind: string, detail?: string) {
     this.log.push({ t: Date.now(), kind, detail });
@@ -250,6 +255,7 @@ export class CubeLink {
    */
   async resync(): Promise<void> {
     this.lastSerial = null;
+    this.gesture.reset();
     this.budget.spendFreely(performance.now());
     this.note('resync');
     await this.command('REQUEST_FACELETS');
@@ -348,6 +354,13 @@ export class CubeLink {
         this.lastSerial = e.serial;
         this.budget.refill(performance.now());
         this.state = applyMove(this.state, e.move);
+        // Four quarter turns of D leave the cube untouched, so this can be
+        // checked before anything else without changing what the move does.
+        if (this.gesture.push(e.move, e.localTimestamp ?? e.timestamp)) {
+          this.note('reset-gesture');
+          this.notify((l) => l.resetGesture?.());
+          void this.resetToSolved();
+        }
         const lm: LiveMove = {
           move: e.move,
           localTs: e.localTimestamp ?? e.timestamp,

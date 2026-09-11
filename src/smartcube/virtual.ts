@@ -4,6 +4,7 @@
  */
 
 import { SOLVED_STATE, applyMove, cloneState, type CubeState } from '../cube/cube';
+import { ResetGesture } from './gesture';
 import type { LiveMove } from './connection';
 
 /** A plain key is a clockwise turn; hold Shift for a half turn. */
@@ -41,6 +42,7 @@ class VirtualCube {
   private listeners = new Set<Listener>();
   /** True while keys are driving this cube */
   active = false;
+  private gesture = new ResetGesture();
 
   /**
    * Switched on or off. Worth announcing: a phone bridging to a computer has
@@ -88,6 +90,8 @@ class VirtualCube {
     };
     for (const l of this.listeners) l.move?.(lm, this.state);
     for (const l of this.listeners) l.state?.(this.state, false);
+    // Same four-D gesture as the real cube, so it can be tried without one
+    if (this.gesture.push(move, at)) this.setState(cloneState(SOLVED_STATE));
   }
 
   /** Turn a key event into a move; returns the move performed, or null. */

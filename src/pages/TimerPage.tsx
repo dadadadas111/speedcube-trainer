@@ -24,8 +24,9 @@ const HOLD_MS = 350;
 const STUCK_MS = 3000;
 
 export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) => void }) {
-  const { settings, sessionId, cubeStatus, bump, revision } = useApp();
+  const { settings, updateSettings, sessionId, cubeStatus, bump, revision } = useApp();
   const usingCube = cubeStatus === 'connected' || settings.keyboardCube;
+  const slow = settings.timerMode === 'slow';
 
   const [scramble, setScramble] = useState<string[]>([]);
   const [scrambleSource, setScrambleSource] = useState<ScrambleSource>('random-state');
@@ -37,6 +38,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const [lastSolve, setLastSolve] = useState<Solve | null>(null);
   const [recent, setRecent] = useState<Solve[]>([]);
   const [stuck, setStuck] = useState(false);
+  /** Live move count — what slow mode puts on screen in place of the clock */
+  const [moveCount, setMoveCount] = useState(0);
   const [showSync, setShowSync] = useState(false);
 
   const phaseRef = useRef<Phase>('scrambling');
@@ -174,6 +177,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
         if (p === 'ready' || p === 'inspecting') {
           movesRef.current = [m];
+          setMoveCount(1);
           startRef.current = performance.now();
           lastMoveAtRef.current = performance.now();
           setLastSolve(null);
@@ -185,6 +189,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
         if (p === 'running') {
           movesRef.current.push(m);
+          setMoveCount(movesRef.current.length);
           lastMoveAtRef.current = performance.now();
           setStuck(false);
           if (isSolved(state)) finishFromMoves();
@@ -348,9 +353,13 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   if (phase === 'running') {
     return (
       <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6">
+        {/* Slow mode counts moves instead of seconds. The clock still runs and
+            is still recorded — it is just not the thing to be looking at when
+            the point of the solve is to find a shorter solution. */}
         <div className="tnum font-mono text-[clamp(3.5rem,14vw,10rem)] font-semibold leading-none text-ink-100">
-          {formatTime(display)}
+          {slow ? moveCount : formatTime(display)}
         </div>
+        {slow && <p className="-mt-4 text-sm text-ink-500">moves</p>}
         {usingCube && (
           // The on-screen cube follows the real one during the solve — which is
           // also how a dropped bluetooth move shows up, as the two diverge.
@@ -384,6 +393,24 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
                 <ScrambleGuide moves={scramble} progress={phase === 'scrambling' ? progress : null} />
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
+                <div className="flex gap-1">
+                  {(['speed', 'slow'] as const).map((m) => (
+                    <button
+                      key={m}
+                      className={`btn btn-ghost !px-2 !py-0.5 !text-[12px] ${
+                        settings.timerMode === m ? '!text-cube-blue' : '!text-ink-500'
+                      }`}
+                      onClick={() => void updateSettings({ timerMode: m })}
+                      title={
+                        m === 'slow'
+                          ? 'Solve deliberately: the screen counts moves, and the review talks about efficiency'
+                          : 'Ordinary timed solving'
+                      }
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
                 <button className="btn btn-ghost !py-1 !text-[13px]" onClick={() => void newScramble()}>
                   New
                 </button>
@@ -420,9 +447,16 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
               ? (inspectLeft / 1000).toFixed(1)
               : lastSolve?.penalty === 'DNF'
                 ? 'DNF'
-                : formatTime(display)}
+                : slow && lastSolve && analysis
+                  ? analysis.totalMoves
+                  : formatTime(display)}
             {lastSolve?.penalty === '+2' && <span className="text-bad">+2</span>}
           </div>
+          {slow && lastSolve && analysis && lastSolve.penalty !== 'DNF' && (
+            <p className="-mt-3 text-[13px] text-ink-500">
+              moves · {formatTime(display)}
+            </p>
+          )}
 
           <CubeView
             state={usingCube && phase === 'scrambling' ? live.shown : targetState}
@@ -452,7 +486,11 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         {/* Feedback on the solve just finished, until the next one starts */}
         {lastSolve && (
           <section className="panel px-4 py-4 sm:px-5">
-            <PostSolve analysis={analysis} onOpenReplay={lastSolve.id ? () => onOpenSolve(lastSolve.id!) : undefined} />
+            <PostSolve
+              analysis={analysis}
+              focus={settings.timerMode}
+              onOpenReplay={lastSolve.id ? () => onOpenSolve(lastSolve.id!) : undefined}
+            />
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-800 pt-3">
               <button
                 className={`btn !py-1 !text-[13px] ${lastSolve.penalty === '+2' ? '!border-warn !text-warn' : ''}`}
