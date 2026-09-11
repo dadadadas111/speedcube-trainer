@@ -227,6 +227,14 @@ to escape into the cube's event stream, where a render bug would look exactly
 like a disconnection. Handlers are now called in isolation, and a crash anywhere
 in the UI lands on an error screen you can copy rather than a blank page.
 
+The handler itself cannot throw either, and one path in it used to. The library
+builds a move as `"URFDLB".charAt(face)` plus a direction, and `charAt` returns
+an **empty string** for a face outside 0-5 — so a single corrupted packet yields
+a move of `""`. Applying that threw, on the one code path where a throw takes
+everything after it down with it: the cube goes dead the moment you turn it. A
+move that cannot be read is now logged and skipped, and the cube is asked what
+it is actually showing, since skipping a turn leaves the model a move behind.
+
 When something does go wrong, **Settings → Connection log** has the last hundred
 or so events — moves with their serial numbers, every command sent, and whether
 the link was closed by the app or given up by the cube. That last distinction
@@ -382,7 +390,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 415 assertions, runs in a few seconds
+npm test            # 419 assertions, runs in a few seconds
 npm run test:relay  # the relay, driven through a real socket (needs server/venv)
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```

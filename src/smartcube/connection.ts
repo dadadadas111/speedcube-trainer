@@ -7,7 +7,7 @@
  */
 
 import { connectGanCube, cubeTimestampLinearFit, type GanCubeConnection, type GanCubeEvent, type GanCubeMove } from 'gan-web-bluetooth';
-import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isPlausibleState, isSolved, cloneState, type CubeState } from '../cube/cube';
+import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isKnownMove, isPlausibleState, isSolved, cloneState, type CubeState } from '../cube/cube';
 import { MAC_STORAGE_KEY, normalizeMac } from './mac';
 import { isFreshSerial } from './serial';
 import { CommandBudget, notifyAll } from './dispatch';
@@ -347,16 +347,44 @@ export class CubeLink {
     this.notify((l) => l.state?.(s, fromCube));
   }
 
+  /**
+   * Nothing in here may throw.
+   *
+   * This runs inside the cube's own event stream. An exception escaping it does
+   * not just lose one event — it stops the ones after it, and from the outside
+   * that is indistinguishable from the cube disconnecting. Every branch below is
+   * therefore written to fail quietly and write down what happened.
+   */
   private handle(e: GanCubeEvent) {
+    try {
+      this.dispatch(e);
+    } catch (err) {
+      this.note('event-error', `${e?.type}: ${(err as Error)?.message ?? String(err)}`);
+    }
+  }
+
+  private dispatch(e: GanCubeEvent) {
     this.notify((l) => l.raw?.(e));
     switch (e.type) {
       case 'MOVE': {
+        // A corrupted packet can decode to a face outside 0-5, and the library
+        // turns that into an empty move string. Applying it would throw.
+        if (!isKnownMove(e.move)) {
+          // A move we cannot read is a move we cannot apply, so the model is
+          // now behind the cube by one turn. Ask the cube what it is actually
+          // showing rather than carrying on from a state we know is wrong.
+          this.note('bad-move', JSON.stringify(e.move));
+          this.driftCount++;
+          void this.pollState();
+          break;
+        }
         this.lastSerial = e.serial;
         this.budget.refill(performance.now());
         this.state = applyMove(this.state, e.move);
         // Four quarter turns of D leave the cube untouched, so this can be
         // checked before anything else without changing what the move does.
-        if (this.gesture.push(e.move, e.localTimestamp ?? e.timestamp)) {
+        const at = e.localTimestamp ?? e.timestamp;
+        if (this.gesture.push(e.move, Number.isFinite(at) ? at : performance.now())) {
           this.note('reset-gesture');
           this.notify((l) => l.resetGesture?.());
           void this.resetToSolved();

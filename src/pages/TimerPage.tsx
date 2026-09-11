@@ -363,7 +363,13 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         {usingCube && (
           // The on-screen cube follows the real one during the solve — which is
           // also how a dropped bluetooth move shows up, as the two diverge.
-          <CubeView state={live.shown} animate={live.animate} size={150} quaternion={quaternion} interactive={false} />
+          <CubeView
+            state={live.animate ? live.shown : cubeState}
+            animate={live.animate}
+            size={150}
+            quaternion={quaternion}
+            interactive={false}
+          />
         )}
         {stuck ? (
           <button className="btn btn-danger pop-in" onClick={() => finishFromMoves('DNF')}>
@@ -459,7 +465,9 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           )}
 
           <CubeView
-            state={usingCube && phase === 'scrambling' ? live.shown : targetState}
+            state={
+              usingCube && phase === 'scrambling' ? (live.animate ? live.shown : cubeState) : targetState
+            }
             animate={usingCube && phase === 'scrambling' ? live.animate : null}
             size={190}
             quaternion={usingCube && phase === 'scrambling' ? quaternion : null}

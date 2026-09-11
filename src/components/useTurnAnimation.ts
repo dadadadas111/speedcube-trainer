@@ -17,6 +17,18 @@ import { SOLVED_STATE, cloneState, type CubeState } from '../cube/cube';
 /** Short enough to keep up with a solve, long enough for the eye to catch. */
 const TURN_MS = 110;
 
+/**
+ * A turn must never be able to strand the cube at the position before it.
+ *
+ * requestAnimationFrame does not run in a hidden or fully covered tab, and the
+ * frames are the only thing that moves the display forward. Without a fallback,
+ * one missed frame leaves the cube showing the previous position until some
+ * other event happens to correct it — and a real cube sends a full state only
+ * now and then, so "now and then" can be a very long time. A timer keeps
+ * running where frames do not, so it settles the turn regardless.
+ */
+const SETTLE_MS = 500;
+
 export interface TurnAnimation {
   /** The state to draw — the one before the turn while it is running */
   shown: CubeState;
@@ -32,11 +44,14 @@ export function useTurnAnimation(): TurnAnimation {
   const [shown, setShown] = useState<CubeState>(() => cloneState(SOLVED_STATE));
   const [animate, setAnimate] = useState<{ move: string; progress: number } | null>(null);
   const raf = useRef(0);
+  const guard = useRef(0);
   const target = useRef<CubeState>(shown);
 
   const stop = useCallback(() => {
     if (raf.current) cancelAnimationFrame(raf.current);
     raf.current = 0;
+    if (guard.current) clearTimeout(guard.current);
+    guard.current = 0;
   }, []);
 
   const turn = useCallback(
@@ -45,19 +60,20 @@ export function useTurnAnimation(): TurnAnimation {
       const from = target.current;
       target.current = after;
       setShown(from);
+      const settle = () => {
+        stop();
+        setAnimate(null);
+        setShown(target.current);
+      };
       const t0 = performance.now();
       const tick = () => {
         const progress = Math.min(1, (performance.now() - t0) / TURN_MS);
         setAnimate({ move, progress });
-        if (progress < 1) {
-          raf.current = requestAnimationFrame(tick);
-        } else {
-          raf.current = 0;
-          setAnimate(null);
-          setShown(after);
-        }
+        if (progress < 1) raf.current = requestAnimationFrame(tick);
+        else settle();
       };
       raf.current = requestAnimationFrame(tick);
+      guard.current = window.setTimeout(settle, SETTLE_MS);
     },
     [stop],
   );

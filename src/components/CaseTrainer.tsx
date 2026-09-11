@@ -75,6 +75,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
   const [history, setHistory] = useState<Attempt[]>([]);
   /** Every time recorded for these cases, so "your best" means all time */
   const [past, setPast] = useState<Map<number, number[]>>(new Map());
+  const [cubeState, setCubeState] = useState<CubeState>(() => cloneState(SOLVED_STATE));
   const live = useTurnAnimation();
 
   const phaseRef = useRef<Phase>('idle');
@@ -216,6 +217,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
     {
       onState: (s, fromCube) => {
         cubeRef.current = s;
+        setCubeState(s);
         if (fromCube) live.jump(s);
         if (phaseRef.current !== 'setup') return;
         const tracker = trackerRef.current;
@@ -227,6 +229,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
       onMove: (m, state) => {
         live.turn(m.move, state);
         cubeRef.current = state;
+        setCubeState(state);
         const p = phaseRef.current;
 
         if (p === 'setup') {
@@ -351,7 +354,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
             )}
             {phase === 'running' && <p className="text-lg font-semibold text-cube-blue">Running…</p>}
 
-            <CubeView state={live.shown} animate={live.animate} size={170} />
+            <CubeView state={live.animate ? live.shown : cubeState} animate={live.animate} size={170} />
           </div>
         )}
 

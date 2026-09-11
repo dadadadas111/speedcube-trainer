@@ -29,6 +29,20 @@ export function applyMove(s: CubeState, move: string): CubeState {
   return applyPerm(s, perm);
 }
 
+/**
+ * Is this something that can actually be applied?
+ *
+ * Worth asking before trusting a move that came off the wire. A GAN cube builds
+ * its move string as `"URFDLB".charAt(face)` plus a direction, and charAt
+ * returns an EMPTY STRING for a face outside 0-5 — so one corrupted packet
+ * yields a move of `""` or `"'"`. Handing that to applyMove throws, and a throw
+ * on that path escapes into the cube's own event stream, where it stops
+ * everything after it: from the outside the cube simply goes dead.
+ */
+export function isKnownMove(move: string): boolean {
+  return Object.prototype.hasOwnProperty.call(MOVE_PERMS, move);
+}
+
 export function applyMoves(s: CubeState, moves: string[]): CubeState {
   let cur = s;
   for (const m of moves) cur = applyMove(cur, m);

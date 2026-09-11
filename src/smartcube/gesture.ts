@@ -41,8 +41,12 @@ export class ResetGesture {
     if (this.runs.length && this.runs[this.runs.length - 1].move !== move) {
       this.runs = [];
     }
-    this.runs.push({ move, t });
-    while (this.runs.length && t - this.runs[0].t > this.windowMs) this.runs.shift();
+    // A timestamp that is not a number makes every comparison false, which
+    // would leave the window open forever and let four turns minutes apart
+    // count as a gesture.
+    const at = Number.isFinite(t) ? t : 0;
+    this.runs.push({ move, t: at });
+    while (this.runs.length && at - this.runs[0].t > this.windowMs) this.runs.shift();
     if (this.runs.length >= this.needed) {
       this.runs = [];
       return true;

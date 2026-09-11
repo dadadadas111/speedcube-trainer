@@ -1,4 +1,4 @@
-import { SOLVED_STATE, applyMoves, toKociemba, isSolved, canonicalKey, PIECES, groupSolved } from './cube';
+import { SOLVED_STATE, applyMoves, toKociemba, isSolved, canonicalKey, PIECES, groupSolved, isKnownMove } from './cube';
 import { MOVE_PERMS, ROTATIONS } from './geometry';
 
 let fails = 0;
@@ -65,4 +65,23 @@ for (const [name, perm] of Object.entries(MOVE_PERMS)) {
   const seen = new Set(perm);
   if (seen.size !== 54) { fails++; console.log('FAIL permutation is not a bijection: ' + name); }
 }
+/* ---- What a smart cube can send, and what it must not be trusted with ---- */
+{
+  // The library builds its move as "URFDLB".charAt(face) + " '".charAt(dir),
+  // so these twelve are everything a healthy packet can produce
+  const reportable = ['U', 'R', 'F', 'D', 'L', 'B'].flatMap((f) => [f, f + "'"]);
+  check('every move a cube can report is one we can apply', reportable.every(isKnownMove), reportable.join(' '));
+
+  // ...and charAt returns an empty string for a face outside 0-5, which is what
+  // a corrupted packet decodes to. Applying that throws, and a throw on the
+  // event path takes the whole cube down with it.
+  const corrupt = ['', "'", ' ', 'X', "X'", '7', 'undefined'];
+  check('a move from a corrupted packet is refused', corrupt.every((m) => !isKnownMove(m)), corrupt.join('|'));
+  check('and refusing it is what stops applyMove throwing',
+    corrupt.every((m) => {
+      try { applyMoves(SOLVED_STATE, [m]); return false; } catch { return true; }
+    }));
+  check('inherited property names are not moves', !isKnownMove('toString') && !isKnownMove('constructor'));
+}
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
