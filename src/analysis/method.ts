@@ -21,8 +21,9 @@ import { ROTATIONS, MOVE_PERMS, composePerm, IDENTITY_PERM } from '../cube/geome
  *
  * Turning the U layer never touches either block, so this set is safe here.
  */
-export const ROTATIONS_WITH_AUF: Uint8Array[] = (() => {
-  const out: Uint8Array[] = [];
+const AUF_FRAMES = (() => {
+  const perms: Uint8Array[] = [];
+  const bases: Uint8Array[] = [];
   const seen = new Set<string>();
   for (const rot of ROTATIONS) {
     let u: Uint8Array = IDENTITY_PERM as Uint8Array;
@@ -33,13 +34,22 @@ export const ROTATIONS_WITH_AUF: Uint8Array[] = (() => {
       const key = p.join(',');
       if (!seen.has(key)) {
         seen.add(key);
-        out.push(p);
+        perms.push(p);
+        bases.push(rot);
       }
       u = composePerm(u, MOVE_PERMS['U']);
     }
   }
-  return out;
+  return { perms, bases };
 })();
+
+export const ROTATIONS_WITH_AUF: Uint8Array[] = AUF_FRAMES.perms;
+
+/**
+ * For each entry above, the plain rotation it was built from — an AUF is not a
+ * way of holding the cube, so notation has to be read in the rotation alone.
+ */
+export const ROTATIONS_WITH_AUF_BASE: Uint8Array[] = AUF_FRAMES.bases;
 
 export type MethodName = 'roux' | 'cfop';
 
@@ -54,6 +64,12 @@ export interface StageSpec {
    * layer spins constantly but the four corners still count as done.
    */
   allowAuf?: boolean;
+  /**
+   * The test says nothing about how the cube is held — true for the last step,
+   * which is just "solved". Reading notation in a frame picked at random would
+   * invent a rotation that never happened, so these report no frame at all.
+   */
+  anyFrame?: boolean;
 }
 
 const rouxFB = (s: CubeState, rot: Uint8Array) => groupSolved(s, rot, PIECES.FB);
@@ -97,7 +113,7 @@ export const ROUX_STAGES: StageSpec[] = [
   { key: 'CMLL', label: 'CMLL', hint: 'Orient and permute the 4 top corners — recognition plus algs', test: rouxCMLL },
   { key: 'EO', label: 'LSE 4a (EO)', hint: 'Orient the remaining 6 edges', test: rouxEO, allowAuf: true },
   { key: 'LR', label: 'LSE 4b (UL/UR)', hint: 'Place the UL and UR edges', test: rouxLR, allowAuf: true },
-  { key: 'L4C', label: 'LSE 4c (M slice)', hint: 'Finish the middle slice', test: (s) => isSolved(s) },
+  { key: 'L4C', label: 'LSE 4c (M slice)', hint: 'Finish the middle slice', test: (s) => isSolved(s), anyFrame: true },
 ];
 
 const cfopCross = (s: CubeState, rot: Uint8Array) => groupSolved(s, rot, PIECES.CROSS);
@@ -117,7 +133,7 @@ export const CFOP_STAGES: StageSpec[] = [
   { key: 'F2L3', label: 'F2L #3', hint: '', test: cfopF2L(3) },
   { key: 'F2L4', label: 'F2L #4', hint: 'Lookahead is everything — do not pause between pairs', test: cfopF2L(4) },
   { key: 'OLL', label: 'OLL', hint: 'Recognition plus algs', test: cfopOLL },
-  { key: 'PLL', label: 'PLL', hint: 'Recognition plus algs', test: (s) => isSolved(s) },
+  { key: 'PLL', label: 'PLL', hint: 'Recognition plus algs', test: (s) => isSolved(s), anyFrame: true },
 ];
 
 export function stagesFor(method: MethodName): StageSpec[] {
@@ -132,6 +148,12 @@ export interface StageDetection {
   endIndex: number;
   /** The orientation that matched, used for display; null if none */
   rotation: Uint8Array | null;
+  /**
+   * The same thing without any AUF mixed in: the way the cube was being held.
+   * Notation is read in this, since turning the U layer is not a way of holding
+   * the cube.
+   */
+  frame: Uint8Array | null;
 }
 
 /**
@@ -145,17 +167,20 @@ export function detectStages(states: CubeState[], specs: StageSpec[], colors?: U
   for (const spec of specs) {
     let found = -1;
     let rotation: Uint8Array | null = null;
+    let frame: Uint8Array | null = null;
     const frames = spec.allowAuf ? ROTATIONS_WITH_AUF : ROTATIONS;
+    const bases = spec.allowAuf ? ROTATIONS_WITH_AUF_BASE : ROTATIONS;
     for (let i = from; i < states.length && found < 0; i++) {
-      for (const rot of frames) {
-        if (spec.test(states[i], rot)) {
+      for (let j = 0; j < frames.length; j++) {
+        if (spec.test(states[i], frames[j])) {
           found = i;
-          rotation = rot;
+          rotation = frames[j];
+          frame = bases[j];
           break;
         }
       }
     }
-    out.push({ key: spec.key, label: spec.label, hint: spec.hint, endIndex: found, rotation });
+    out.push({ key: spec.key, label: spec.label, hint: spec.hint, endIndex: found, rotation, frame: spec.anyFrame ? null : frame });
     if (found < 0) {
       // Not detected -> leave the remaining steps blank too
       from = states.length;

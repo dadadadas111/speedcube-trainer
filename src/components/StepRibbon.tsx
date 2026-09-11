@@ -59,7 +59,7 @@ export default function StepRibbon({ steps, totalMs, height = 10, showLabels, ac
               <span className="inline-block size-2 shrink-0 translate-y-px rounded-[2px]" style={{ background: stepColor(s.key) }} />
               <span className="text-[13px] text-ink-300">{s.label}</span>
               <span className="tnum font-mono text-[13px] text-ink-100">{formatSeconds(s.durationMs)}</span>
-              <span className="tnum text-[11px] text-ink-400">{Math.round((s.durationMs / total) * 100)}%</span>
+              <span className="tnum text-[11px] text-ink-500">{s.moveCount}n</span>
             </Tag>
           );})}
         </div>

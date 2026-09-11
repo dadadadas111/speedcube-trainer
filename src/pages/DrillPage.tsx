@@ -530,8 +530,8 @@ function AlgDetail({
           <div>
             {!usingCube ? (
               <p className="text-sm text-ink-400">
-                Drilling needs a smart cube to time individual moves. Connect one from the top bar, or switch on
-                the keyboard cube in Settings to try it out.
+                Drilling needs a smart cube. Connect one from the top bar, or switch on the keyboard cube in
+                Settings.
               </p>
             ) : (
               <DrillStatus
@@ -598,9 +598,7 @@ function DrillStatus({
       {phase === 'armed' && (
         <>
           <p className="armed text-lg font-semibold text-good">Ready — the first move starts the timer</p>
-          <p className="mt-1 text-sm text-ink-300">
-            The time from now until your first move counts as recognition.
-          </p>
+
         </>
       )}
       {phase === 'running' && (
@@ -676,13 +674,12 @@ function DrillStats({ summary }: { summary: ReturnType<typeof summarizeDrill> })
   );
   return (
     <section className="panel p-5">
-      <h2 className="text-base font-semibold">Where you hesitate</h2>
-      <p className="mt-1 max-w-[70ch] text-[13px] text-ink-400">
-        Each bar is the time from the previous move to that one, taken as a median over {summary.reps} reps.
-        A red bar is where your hands stop to think — usually where a regrip is needed.
-      </p>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-base font-semibold">Where you hesitate</h2>
+        <span className="text-[12px] text-ink-500">median over {summary.reps} reps</span>
+      </div>
 
-      <div className="mt-5 flex items-end gap-1 overflow-x-auto pb-1">
+      <div className="mt-4 flex items-end gap-1 overflow-x-auto pb-1">
         {/* The first move has no "gap from the previous move", so that slot shows
             recognition instead: from entering the case until your hands move. */}
         <div className="flex min-w-[54px] flex-col items-center gap-1 border-r border-ink-700 pr-2">
@@ -724,7 +721,6 @@ function DrillStats({ summary }: { summary: ReturnType<typeof summarizeDrill> })
         <p className="mt-4 max-w-[70ch] text-sm text-warn">
           Worth drilling on its own:{' '}
           {summary.worstMoves.map((w) => `move ${w.index + 1} (${w.move}, ${Math.round(w.medianMs)}ms)`).join(', ')}.
-          Run that fragment slowly a few dozen times until it is in the hands, then put the algorithm back together.
         </p>
       )}
     </section>

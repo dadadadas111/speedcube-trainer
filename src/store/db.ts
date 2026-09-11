@@ -108,7 +108,13 @@ export const db = new TrainerDB();
 
 export async function ensureDefaultSession(): Promise<number> {
   const first = await db.sessions.orderBy('createdAt').first();
-  if (first?.id) return first.id;
+  if (first?.id) {
+    // The default session used to be named in Vietnamese. Rename it so no part
+    // of the app is left in the old language; a session someone named
+    // themselves is left alone.
+    if (first.name === 'Phiên chính') await db.sessions.update(first.id, { name: 'Main session' });
+    return first.id;
+  }
   return db.sessions.add({ name: 'Main session', method: 'roux', createdAt: Date.now() });
 }
 

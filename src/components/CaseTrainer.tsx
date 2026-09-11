@@ -21,7 +21,7 @@ import { DrillMatcher, caseStateFor } from '../analysis/drill';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import { formatSeconds } from '../analysis/stats';
 import CubeView from './CubeView';
-import ScrambleGuide, { ScrambleHint } from './ScrambleGuide';
+import ScrambleGuide, { NextMove } from './ScrambleGuide';
 
 type Phase = 'idle' | 'setup' | 'armed' | 'running' | 'done';
 
@@ -221,8 +221,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
       <section className="panel p-5">
         <h2 className="text-base font-semibold">Random case drill</h2>
         <p className="mt-2 max-w-[60ch] text-sm text-ink-400">
-          This mode needs a smart cube to know when you have turned into the case and to time you. Connect a cube
-          from the top bar, or switch on the keyboard cube in Settings to try it out.
+          This mode needs a smart cube. Connect one from the top bar, or switch on the keyboard cube in Settings.
         </p>
       </section>
     );
@@ -263,13 +262,6 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
           </div>
         </div>
 
-        {phase === 'idle' && (
-          <p className="mt-4 max-w-[62ch] text-sm text-ink-300">
-            The app picks a random case from the scope, walks you into it, then times you from the moment the cube
-            enters the case until it is solved. Cases you have never drilled come up more often.
-          </p>
-        )}
-
         {phase !== 'idle' && target && (
           <div className="mt-5 grid gap-5 md:grid-cols-[190px_minmax(0,1fr)]">
             <div>
@@ -279,7 +271,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
             <div>
               {phase === 'setup' && (
                 <>
-                  <ScrambleHint progress={progress} notReady={false} />
+                  <NextMove progress={progress} />
                   <div className="mt-3 flex items-center gap-3">
                     <div className="h-1 w-40 overflow-hidden rounded-full bg-ink-800">
                       <div
@@ -294,9 +286,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
                   {reveal && (
                     <div className="mt-3">
                       <ScrambleGuide moves={setup} progress={progress} />
-                      <p className="mt-1 text-[12px] text-ink-500">
-                        This is the algorithm reversed — seeing it all gives the case away.
-                      </p>
+
                     </div>
                   )}
                 </>
@@ -305,7 +295,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
               {phase === 'armed' && (
                 <>
                   <p className="armed text-lg font-semibold text-good">In the case — recognise it and go</p>
-                  <p className="mt-1 text-sm text-ink-300">The first move starts the timer.</p>
+
                 </>
               )}
 

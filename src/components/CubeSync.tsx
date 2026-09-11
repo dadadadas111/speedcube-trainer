@@ -86,11 +86,9 @@ export default function CubeSync({ compact = false }: { compact?: boolean }) {
         </button>
       </div>
       {!compact && (
-        <p className="max-w-[64ch] text-[13px] text-ink-400">
-          <span className="text-ink-300">Ask the cube</span> is for when the app shows something different because
-          bluetooth dropped a move — the cube still remembers correctly.{' '}
-          <span className="text-ink-300">Cube is solved</span> is for when the cube itself is wrong; asking then just
-          returns the same error, so solve the cube first and press this to reset the reference.
+        <p className="max-w-[64ch] text-[12px] text-ink-500">
+          <span className="text-ink-300">Ask the cube</span> when bluetooth dropped a move.{' '}
+          <span className="text-ink-300">Cube is solved</span> when the cube itself is wrong — solve it first.
         </p>
       )}
       {result && <p className={`text-[13px] ${tone[result.tone]}`}>{result.text}</p>}

@@ -25,6 +25,8 @@ export interface StepAnalysis {
   pauseMs: number;
   /** Orientation detected at the end of the step, used for rendering */
   rotation: Uint8Array | null;
+  /** The same without any AUF: the way the cube was being held during the step */
+  frame: Uint8Array | null;
   detected: boolean;
 }
 
@@ -114,6 +116,7 @@ export function analyzeSolve(
       pauses,
       pauseMs: pauses.reduce((a, p) => a + p.ms, 0),
       rotation: d.rotation,
+      frame: d.frame,
       detected,
     });
     cursor = endIndex;

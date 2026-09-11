@@ -24,14 +24,22 @@ section below — on a phone you usually type it in once.
 ## The features
 
 **1. A timer that guides the scramble.** WCA random-state scrambles. With a cube
-connected, the app walks you through move by move: the next move is large, the
-done ones fade, and a progress bar fills. Turn something wrong and it says so
-immediately, and **tells you exactly what to undo** to get back on track — no
-starting over. Once the scramble is right the clock starts on your first move
-and stops itself the moment the cube is solved, timed by the clock inside the
-cube (more accurate than the machine's, because bluetooth latency is not in it).
-The on-screen cube follows your real one while you solve — which is also how a
+connected, the app walks you through move by move: the next move is highlighted
+and the done ones fade. Turn something wrong and the correction appears **inside
+the scramble**, spliced in at the point you went off — your eyes are already
+there, so there is nothing to look away for. Once the scramble is right the
+scramble disappears, because there is nothing left to read: the clock and the
+cube get the screen to themselves. The clock starts on your first move and stops
+itself the moment the cube is solved, timed by the clock inside the cube (more
+accurate than the machine's, because bluetooth latency is not in it). The
+on-screen cube follows your real one while you solve — which is also how a
 dropped bluetooth move shows up.
+
+If your hands go still for three seconds mid-solve, an **Abort as DNF** button
+appears — for when something has gone wrong and the solve is not worth
+finishing. When a solve ends the clock keeps showing that time rather than
+snapping back to zero, with the step splits, move count and TPS underneath, so
+the feedback is there before you start the next one.
 
 Stopping the clock has **three layers**, because a single lost packet ruins a
 solve: the last move leaves the cube solved; or the cube itself reports a solved
@@ -67,8 +75,12 @@ steps move by move.
 The highlight follows **the actual pieces** that step is responsible for — found
 by colour, not by position — so while the first block is being built you see
 those five pieces light up even though they are still scattered, and watch them
-come together. The move tape shows which move was wide (slow) and where a pause
-was counted.
+come together.
+
+The reconstruction is written out **grouped by step**, each line in the frame the
+cube was actually being held in, with the bar under each move scaled to how long
+it took. Reading each step in its own frame is what makes LSE come out as `M` and
+`U` instead of drifting into `R`, `L'` and `B` partway through.
 
 **3. Move-by-move review.** A chess-style game review, except the scale is
 **fast versus slow** rather than good versus bad — the app has no idea which
@@ -210,6 +222,14 @@ sensors have no way to know. There the notation says `L`. (In theory the
 gyroscope could guess, but hands shake during a fast solve, so it is not
 trustworthy.)
 
+The same goes for `x`, `y` and `z`: rotating the whole cube turns no face
+relative to the core, so there is simply nothing for the cube to report. The
+rotations in the reconstruction are **inferred, not measured** — when a step is
+recognised in a different orientation from the one before it, the solver must
+have rotated the cube in between, and that is what gets named. They are drawn in
+a dashed outline to keep the distinction visible, and they only ever appear
+between steps, never inside one.
+
 ## Two bugs only a real cube could expose
 
 ### The slice identity
@@ -261,7 +281,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 295 assertions, runs in a few seconds
+npm test            # 315 assertions, runs in a few seconds
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```
 

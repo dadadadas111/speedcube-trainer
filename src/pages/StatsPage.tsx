@@ -89,7 +89,7 @@ export default function StatsPage() {
       <div className="panel p-8 text-center">
         <h2 className="text-lg font-semibold">Nothing to analyse yet</h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-ink-400">
-          Do a few solves on the Timer page. From about 12 solves on, the recommendations start to mean something.
+          Do a few solves on the Timer page.
         </p>
       </div>
     );
@@ -129,10 +129,7 @@ export default function StatsPage() {
       {insights.length > 0 && (
         <section className="panel p-5">
           <h2 className="text-base font-semibold">What to work on</h2>
-          <p className="mt-1 text-[13px] text-ink-400">
-            Ranked by the seconds you are losing against solvers at your speed.
-          </p>
-          <ul className="mt-4 flex flex-col gap-3">
+          <ul className="mt-3 flex flex-col gap-3">
             {insights.slice(0, 6).map((ins, i) => (
               <li key={i} className="border-l-2 pl-3.5" style={{ borderColor: severityColor(ins.severity) }}>
                 <p className="text-[15px] font-semibold">{ins.title}</p>
@@ -165,9 +162,6 @@ export default function StatsPage() {
         <>
           <section className="panel p-5">
             <h2 className="text-base font-semibold">Where the time goes</h2>
-            <p className="mt-1 text-[13px] text-ink-400">
-              Your share of each step against a reference profile. Any bar past the marker is where time is going.
-            </p>
             <div className="mt-4 flex flex-col gap-3">
               {steps.map((s) => (
                 <ShareBar key={s.key} step={s} />
@@ -176,10 +170,7 @@ export default function StatsPage() {
           </section>
 
           <section className="panel p-5">
-            <h2 className="mb-1 text-base font-semibold">Solve structure over time</h2>
-            <p className="mb-4 text-[13px] text-ink-400">
-              Each column is one solve. Watch which band thickens when you tire or hit a hard case.
-            </p>
+            <h2 className="mb-4 text-base font-semibold">Solve structure over time</h2>
             <ResponsiveContainer width="100%" height={240}>
               <AreaChart data={stackData} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
                 <CartesianGrid stroke={GRID} vertical={false} />
@@ -206,10 +197,7 @@ export default function StatsPage() {
 
           <div className="grid gap-5 lg:grid-cols-2">
             <section className="panel p-5">
-              <h2 className="mb-1 text-base font-semibold">Where the pauses are</h2>
-              <p className="mb-4 text-[13px] text-ink-400">
-                Percentage of each step spent with the cube not turning.
-              </p>
+              <h2 className="mb-4 text-base font-semibold">Pauses per step</h2>
               <ResponsiveContainer width="100%" height={210}>
                 <ComposedChart data={steps.map((s) => ({ name: s.label, key: s.key, v: Math.round(s.pauseRatio * 100), ref: Math.round(s.refPauseRatio * 100) }))} margin={{ top: 4, right: 8, bottom: 0, left: -8 }}>
                   <CartesianGrid stroke={GRID} vertical={false} />
@@ -227,8 +215,7 @@ export default function StatsPage() {
             </section>
 
             <section className="panel p-5">
-              <h2 className="mb-1 text-base font-semibold">Moves per step</h2>
-              <p className="mb-4 text-[13px] text-ink-400">The grey mark is the reference movecount.</p>
+              <h2 className="mb-4 text-base font-semibold">Moves per step</h2>
               <div className="flex flex-col gap-2.5">
                 {steps.map((s) => (
                   <div key={s.key} className="flex items-center gap-3">

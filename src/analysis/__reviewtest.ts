@@ -13,7 +13,7 @@ function fakeSolve(pairs: [string, number][], stepKey = 'SB'): SolveAnalysis {
   const step: StepAnalysis = {
     key: stepKey, label: stepKey, hint: '', startIndex: 0, endIndex: moves.length,
     startMs: 0, endMs: t, durationMs: t, moveCount: moves.length, tps: 0,
-    pauses: [], pauseMs: 0, rotation: null, detected: true,
+    pauses: [], pauseMs: 0, rotation: null, frame: null, detected: true,
   };
   return {
     method: 'roux', steps: [step], states: [], moves, totalMs: t,

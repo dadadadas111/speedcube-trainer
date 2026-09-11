@@ -6,6 +6,7 @@ import { applyPerm } from '../cube/cube';
 import { analyzeSolveRecord, analyzeMany } from '../analysis/pipeline';
 import { buildMoveBaseline, reviewSolve, VERDICT_COLORS, type MoveRating, type SolveReview } from '../analysis/moveReview';
 import { stepHighlight } from '../analysis/method';
+import { reconstruct } from '../analysis/reconstruction';
 import { effectiveTime, formatSeconds, formatTime } from '../analysis/stats';
 import CubeView from '../components/CubeView';
 import StepRibbon from '../components/StepRibbon';
@@ -286,12 +287,11 @@ export default function ReplayPage({ solveId, onBack }: { solveId: number; onBac
             />
           )}
 
-          {/* Move by move, width proportional to the real time taken */}
+          {/* Grouped by step, in the frame the cube was held in */}
           <section className="panel p-4">
-            <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-              <h2 className="shrink-0 text-sm font-semibold">Move by move</h2>
-              <span className="flex flex-wrap items-center gap-3 text-[12px] text-ink-400">
-                <span>The bar under each move scales with time; colour is fast or slow against your own pace</span>
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <h2 className="shrink-0 text-sm font-semibold">Reconstruction</h2>
+              <span className="flex flex-wrap items-center gap-3 text-[12px] text-ink-500">
                 {(['very fast', 'normal', 'slow', 'stuck'] as const).map((v) => (
                   <span key={v} className="flex items-center gap-1">
                     <span className="inline-block h-[3px] w-3 rounded-[1px]" style={{ background: VERDICT_COLORS[v] }} />
@@ -368,49 +368,68 @@ function MoveTape({
   index: number;
   onSeek: (i: number) => void;
 }) {
-  const deltas = analysis.moves.map((m, i) => (i === 0 ? 0 : m.t - analysis.moves[i - 1].t));
-  const maxDelta = Math.max(1, ...deltas);
-  const stepOf = (i: number) => analysis.steps.find((s) => i > s.startIndex && i <= s.endIndex);
+  const steps = reconstruct(analysis);
+  const maxDelta = Math.max(1, ...analysis.moves.map((m, i) => (i === 0 ? 0 : m.t - analysis.moves[i - 1].t)));
   const ratingOf = (i: number) => review?.ratings.find((r) => r.index === i) ?? null;
+  const shown = steps.filter((s) => s.moves.length || s.rotation.length);
 
   return (
-    <div className="flex flex-wrap gap-1">
-      {analysis.moves.map((m, i) => {
-        const step = stepOf(i + 1);
-        const d = deltas[i];
-        const rating = ratingOf(i);
-        const color = rating ? VERDICT_COLORS[rating.verdict] : stepColor(step?.key ?? '');
-        const active = index === i + 1;
-        return (
-          <button
-            key={i}
-            type="button"
-            onClick={() => onSeek(i + 1)}
-            title={
-              rating
-                ? `${m.move} · ${Math.round(d)}ms · ${rating.verdict} (usually ${Math.round(rating.baselineMs)}ms, based on ${rating.basis})`
-                : `${m.move} · ${Math.round(d)}ms`
-            }
-            className="relative flex flex-col items-center rounded-[3px] border px-1.5 py-1 font-mono text-[13px] transition-colors"
-            style={{
-              borderColor: active ? stepColor(step?.key ?? '') : 'var(--color-ink-700)',
-              background: active ? 'color-mix(in srgb, ' + stepColor(step?.key ?? '') + ' 22%, transparent)' : 'transparent',
-              color: rating && rating.verdict !== 'normal' ? color : 'var(--color-ink-100)',
-            }}
-          >
-            <span>{m.move}</span>
-            <span
-              className="mt-1 block rounded-[1px]"
-              style={{
-                width: Math.max(3, (d / maxDelta) * 26) + 'px',
-                height: '3px',
-                background: color,
-                opacity: rating?.verdict === 'normal' ? 0.5 : 1,
-              }}
-            />
-          </button>
-        );
-      })}
+    <div className="flex flex-col gap-3">
+      {shown.map((step) => (
+        <div key={step.key}>
+          <div className="mb-1 flex items-baseline gap-1.5">
+            <span className="inline-block size-2 shrink-0 rounded-[2px]" style={{ background: stepColor(step.key) }} />
+            <span className="text-[12px] text-ink-400">{step.label}</span>
+            <span className="tnum font-mono text-[12px] text-ink-500">{formatSeconds(step.durationMs)}s</span>
+            <span className="tnum text-[11px] text-ink-600">{step.moves.length}n</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {step.rotation.map((r, k) => (
+              <span
+                key={'r' + k}
+                title="Whole-cube rotations turn no face, so the cube cannot report them. This one is inferred from the orientation the next step was recognised in."
+                className="flex items-center rounded-[3px] border border-dashed border-ink-600 px-1.5 py-1 font-mono text-[13px] italic text-ink-500"
+              >
+                {r}
+              </span>
+            ))}
+            {step.moves.map((m) => {
+              const rating = ratingOf(m.index - 1);
+              const color = rating ? VERDICT_COLORS[rating.verdict] : stepColor(step.key);
+              const active = index === m.index;
+              return (
+                <button
+                  key={m.index}
+                  type="button"
+                  onClick={() => onSeek(m.index)}
+                  title={
+                    rating
+                      ? `${m.move} · ${Math.round(m.deltaMs)}ms · ${rating.verdict} (usually ${Math.round(rating.baselineMs)}ms, based on ${rating.basis})`
+                      : `${m.move} · ${Math.round(m.deltaMs)}ms`
+                  }
+                  className="relative flex flex-col items-center rounded-[3px] border px-1.5 py-1 font-mono text-[13px] transition-colors"
+                  style={{
+                    borderColor: active ? stepColor(step.key) : 'var(--color-ink-700)',
+                    background: active ? 'color-mix(in srgb, ' + stepColor(step.key) + ' 22%, transparent)' : 'transparent',
+                    color: rating && rating.verdict !== 'normal' ? color : 'var(--color-ink-100)',
+                  }}
+                >
+                  <span>{m.move}</span>
+                  <span
+                    className="mt-1 block rounded-[1px]"
+                    style={{
+                      width: Math.max(3, (m.deltaMs / maxDelta) * 26) + 'px',
+                      height: '3px',
+                      background: color,
+                      opacity: rating?.verdict === 'normal' ? 0.5 : 1,
+                    }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -429,15 +448,11 @@ function MoveReviewPanel({
     <section className="panel p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold">Move review</h2>
-        <span className="text-[13px] text-ink-400">
-          against your usual pace, built from {review.baselineSolves} solves
-        </span>
+        <span className="text-[12px] text-ink-500">vs your pace over {review.baselineSolves} solves</span>
       </div>
 
       {!review.reliable && (
-        <p className="mt-2 text-[13px] text-warn">
-          Not much data yet, so the baseline is shaky. A few dozen more solves and this becomes trustworthy.
-        </p>
+        <p className="mt-2 text-[12px] text-warn">Baseline is still thin.</p>
       )}
 
       {review.lostMs > 250 ? (

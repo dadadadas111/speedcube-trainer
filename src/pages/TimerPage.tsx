@@ -11,7 +11,7 @@ import { ScrambleTracker, isAtStart, type ScrambleProgress } from '../analysis/s
 import { analyzeSolveRecord } from '../analysis/pipeline';
 import { averageOf, effectiveTime, formatTime } from '../analysis/stats';
 import CubeView from '../components/CubeView';
-import ScrambleGuide, { ScrambleHint } from '../components/ScrambleGuide';
+import ScrambleGuide from '../components/ScrambleGuide';
 import CubeSync from '../components/CubeSync';
 import PostSolve from '../components/PostSolve';
 import StepRibbon from '../components/StepRibbon';
@@ -19,6 +19,8 @@ import StepRibbon from '../components/StepRibbon';
 type Phase = 'scrambling' | 'ready' | 'inspecting' | 'holding' | 'armed' | 'running' | 'done';
 
 const HOLD_MS = 350;
+/** How long the hands have to be still before offering a way out of the solve */
+const STUCK_MS = 3000;
 
 export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) => void }) {
   const { settings, sessionId, cubeStatus, bump, revision } = useApp();
@@ -33,6 +35,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const [progress, setProgress] = useState<ScrambleProgress | null>(null);
   const [lastSolve, setLastSolve] = useState<Solve | null>(null);
   const [recent, setRecent] = useState<Solve[]>([]);
+  const [stuck, setStuck] = useState(false);
+  const [showSync, setShowSync] = useState(false);
 
   const phaseRef = useRef<Phase>('scrambling');
   const lastMoveAtRef = useRef(0);
@@ -58,7 +62,6 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     scrambleRef.current = moves;
     setScramble(moves);
     setScrambleSource(source);
-    setDisplay(0);
     const tracker = new ScrambleTracker(moves);
     trackerRef.current = tracker;
     setProgress(usingCube ? tracker.update(cubeStateRef.current) : null);
@@ -94,25 +97,28 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   };
 
   /** End the solve, taking the final time from the last move recorded. */
-  const finishFromMoves = useCallback(() => {
+  const finishFromMoves = useCallback((penalty: Penalty = 'none') => {
     const norm = normalizeTimestamps(movesRef.current);
     const t = norm[norm.length - 1]?.t ?? performance.now() - startRef.current;
-    void finishSolveRef.current?.(t, movesRef.current, 'smartcube');
+    void finishSolveRef.current?.(t, movesRef.current, 'smartcube', penalty);
   }, []);
 
-  const finishSolveRef = useRef<((t: number, m: LiveMove[], s: 'smartcube' | 'manual') => Promise<void>) | null>(null);
+  const finishSolveRef = useRef<
+    ((t: number, m: LiveMove[], s: 'smartcube' | 'manual', p: Penalty) => Promise<void>) | null
+  >(null);
 
   const finishSolve = useCallback(
-    async (timeMs: number, moves: LiveMove[], source: 'smartcube' | 'manual') => {
+    async (timeMs: number, moves: LiveMove[], source: 'smartcube' | 'manual', penalty: Penalty = 'none') => {
       stopRaf();
       setDisplay(timeMs);
+      setStuck(false);
       setPhaseBoth('done');
       const solve: Solve = {
         sessionId,
         date: Date.now(),
         scramble: scrambleRef.current.join(' '),
         timeMs,
-        penalty: 'none',
+        penalty,
         source,
         moves: source === 'smartcube' ? normalizeTimestamps(moves) : [],
       };
@@ -151,6 +157,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           const next = tracker.update(state, m.move);
           setProgress(next);
           if (next.status === 'complete') {
+            setLastSolve(null);
+            setDisplay(0);
             setPhaseBoth(settings.useInspection ? 'inspecting' : 'ready');
             if (settings.useInspection) setInspectLeft(settings.inspectionSeconds * 1000);
           }
@@ -161,6 +169,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           movesRef.current = [m];
           startRef.current = performance.now();
           lastMoveAtRef.current = performance.now();
+          setLastSolve(null);
           setPhaseBoth('running');
           setInspectLeft(0);
           rafRef.current = requestAnimationFrame(tick);
@@ -170,6 +179,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         if (p === 'running') {
           movesRef.current.push(m);
           lastMoveAtRef.current = performance.now();
+          setStuck(false);
           if (isSolved(state)) finishFromMoves();
         }
       },
@@ -239,6 +249,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
       const p = phaseRef.current;
       if (p === 'armed') {
         startRef.current = performance.now();
+        setLastSolve(null);
         setPhaseBoth('running');
         rafRef.current = requestAnimationFrame(tick);
       } else if (p === 'holding') {
@@ -261,16 +272,24 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
    * Third safety net: while running, a pause in turning triggers a poll asking
    * the cube whether it is solved. This catches a dropped final move without
    * ever stopping wrongly, because it only stops when the cube itself says so.
+   *
+   * The same pause is what offers the way out: hands still for a few seconds
+   * usually means something went wrong rather than a long think.
    */
   useEffect(() => {
-    if (phase !== 'running' || cubeStatus !== 'connected') return;
+    if (phase !== 'running') {
+      setStuck(false);
+      return;
+    }
     const id = setInterval(() => {
+      const idle = performance.now() - lastMoveAtRef.current;
       // Only ask after the hands have stopped for a moment — mid-turn there is
       // no need, and it keeps the bluetooth link clear during the solve.
-      if (performance.now() - lastMoveAtRef.current > 1000) void cubeLink.resync();
-    }, 700);
+      if (idle > 1000 && cubeStatus === 'connected') void cubeLink.resync();
+      if (usingCube) setStuck(idle > STUCK_MS);
+    }, 400);
     return () => clearInterval(id);
-  }, [phase, cubeStatus]);
+  }, [phase, cubeStatus, usingCube]);
 
   useEffect(() => () => stopRaf(), []);
 
@@ -284,8 +303,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
   /**
    * Only say "cube not solved" when the app is genuinely stuck: off track and
-   * unable to work out what was turned, so it has no fix to offer. When it does
-   * know, show the undo moves instead, even after a single wrong turn.
+   * unable to work out what was turned, so it has no fix to offer.
    */
   const notReady =
     usingCube &&
@@ -308,6 +326,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     bump();
   };
 
+  /* ---------- running: nothing on screen but the clock and the cube ---------- */
   if (phase === 'running') {
     return (
       <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6">
@@ -319,125 +338,134 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           // also how a dropped bluetooth move shows up, as the two diverge.
           <CubeView state={cubeState} size={150} quaternion={quaternion} interactive={false} />
         )}
-        <p className="text-sm text-ink-400">
-          {usingCube ? 'The clock stops when the cube is solved.' : 'Press any key to stop.'}
-        </p>
+        {stuck ? (
+          <button className="btn btn-danger pop-in" onClick={() => finishFromMoves('DNF')}>
+            Abort as DNF
+          </button>
+        ) : usingCube ? null : (
+          <p className="text-sm text-ink-500">Press any key to stop.</p>
+        )}
       </div>
     );
   }
 
+  // Once the cube is scrambled there is nothing left to read, so it goes away.
+  // Without scramble tracking the app cannot know when that moment is, so it stays.
+  const scrambleVisible =
+    !usingCube || !settings.requireScrambleMatch || phase === 'scrambling' || phase === 'done';
+  const timerTone =
+    phase === 'inspecting' ? 'text-warn' : lastSolve ? 'text-ink-100' : 'text-ink-600';
+
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="flex min-h-0 flex-col gap-5">
-        <section className="panel p-5">
-          <div className="mb-1 flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <ScrambleGuide moves={scramble} progress={phase === 'scrambling' ? progress : null} />
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <button className="btn btn-ghost" onClick={() => void newScramble()} title="Get a different scramble">
-                New
-              </button>
-              {settings.randomStateScramble && scrambleSource === 'random-move' && (
-                <span className="text-[11px] text-warn" title="The random-state generator failed to load; falling back to random moves.">
-                  random-move
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-start gap-5 border-t border-ink-700 pt-4">
-            <div>
-              <p className="mb-1.5 text-[13px] text-ink-400">
-                {usingCube && phase === 'scrambling' ? 'Your cube' : 'After the scramble'}
-              </p>
-              <CubeView
-                state={usingCube && phase === 'scrambling' ? cubeState : targetState}
-                size={190}
-                quaternion={usingCube && phase === 'scrambling' ? quaternion : null}
-              />
-            </div>
-            <div className="min-w-[14rem] flex-1">
-              {phase === 'inspecting' ? (
-                <div>
-                  <p className="tnum font-mono text-4xl font-semibold text-warn">{(inspectLeft / 1000).toFixed(1)}</p>
-                  <p className="text-[13px] text-ink-400">The first move starts the timer.</p>
-                </div>
-              ) : phase === 'ready' && usingCube ? (
-                <p className="armed text-lg font-semibold text-good">
-                  {settings.requireScrambleMatch ? 'Scrambled' : 'Ready'} — the first move starts the clock
-                </p>
-              ) : phase === 'armed' ? (
-                <p className="text-lg font-semibold text-good">Release to start</p>
-              ) : phase === 'holding' ? (
-                <p className="text-lg font-semibold text-warn">Keep holding…</p>
-              ) : !usingCube ? (
-                <p className="text-sm text-ink-300">
-                  Hold space to time by hand, or connect a smart cube from the top bar to be guided through the scramble.
-                </p>
-              ) : (
-                <ScrambleHint progress={progress} notReady={!!notReady} />
-              )}
-
-              {usingCube && (phase === 'scrambling' || phase === 'done') && (
-                <div className="mt-4 border-t border-ink-800 pt-3">
-                  <p className="mb-1.5 text-[12px] text-ink-500">
-                    App showing something different from your cube?
-                  </p>
-                  <CubeSync compact />
-                </div>
-              )}
-              {settings.keyboardCube && phase === 'scrambling' && (
-                <button
-                  className="btn btn-ghost mt-3 !px-2 !py-1 !text-[13px]"
-                  onClick={() => virtualCube.setState(applyMoves(SOLVED_STATE, scramble))}
-                >
-                  Apply the scramble to the virtual cube
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="panel p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
-            <div>
-              <div className="tnum font-mono text-[clamp(2.75rem,8vw,5rem)] font-semibold leading-none">
-                {lastSolve && lastSolve.penalty === 'DNF' ? 'DNF' : formatTime(display)}
-                {lastSolve?.penalty === '+2' && <span className="text-bad">+2</span>}
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="flex min-h-0 flex-col gap-4">
+        {scrambleVisible && (
+          <section className="panel px-4 py-3.5 sm:px-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <ScrambleGuide moves={scramble} progress={phase === 'scrambling' ? progress : null} />
               </div>
-              {lastSolve && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    className={`btn !py-1 !text-[13px] ${lastSolve.penalty === '+2' ? '!border-warn !text-warn' : ''}`}
-                    onClick={() => void applyPenalty(lastSolve, lastSolve.penalty === '+2' ? 'none' : '+2')}
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <button className="btn btn-ghost !py-1 !text-[13px]" onClick={() => void newScramble()}>
+                  New
+                </button>
+                {settings.randomStateScramble && scrambleSource === 'random-move' && (
+                  <span
+                    className="text-[11px] text-warn"
+                    title="The random-state generator failed to load; falling back to random moves."
                   >
-                    +2
-                  </button>
-                  <button
-                    className={`btn !py-1 !text-[13px] ${lastSolve.penalty === 'DNF' ? '!border-bad !text-bad' : ''}`}
-                    onClick={() => void applyPenalty(lastSolve, lastSolve.penalty === 'DNF' ? 'none' : 'DNF')}
-                  >
-                    DNF
-                  </button>
-                  <button className="btn btn-danger !py-1 !text-[13px]" onClick={() => void deleteSolve(lastSolve)}>
-                    Delete
-                  </button>
-                </div>
-              )}
+                    random-move
+                  </span>
+                )}
+              </div>
             </div>
-            <dl className="flex gap-6">
-              <Stat label="ao5" value={formatTime(ao5)} />
-              <Stat label="ao12" value={formatTime(ao12)} />
-              <Stat label="best" value={formatTime(best)} />
-            </dl>
+            {notReady && (
+              <button
+                className="mt-2 text-[12px] text-warn underline underline-offset-2"
+                onClick={() => setShowSync((v) => !v)}
+              >
+                Cube is not solved — solve it, or sync if the app has it wrong
+              </button>
+            )}
+            {showSync && (
+              <div className="mt-3 border-t border-ink-800 pt-3">
+                <CubeSync compact />
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* The clock and the cube, with nothing competing for attention */}
+        <section className="panel flex flex-col items-center gap-4 px-4 py-6 sm:py-8">
+          <div className={`tnum font-mono text-[clamp(3rem,11vw,6.5rem)] font-semibold leading-none ${timerTone}`}>
+            {phase === 'inspecting'
+              ? (inspectLeft / 1000).toFixed(1)
+              : lastSolve?.penalty === 'DNF'
+                ? 'DNF'
+                : formatTime(display)}
+            {lastSolve?.penalty === '+2' && <span className="text-bad">+2</span>}
           </div>
-          {lastSolve && (
-            <div className="mt-5 border-t border-ink-700 pt-4">
-              <PostSolve analysis={analysis} onOpenReplay={lastSolve.id ? () => onOpenSolve(lastSolve.id!) : undefined} />
-            </div>
+
+          <CubeView
+            state={usingCube && phase === 'scrambling' ? cubeState : targetState}
+            size={190}
+            quaternion={usingCube && phase === 'scrambling' ? quaternion : null}
+          />
+
+          {phase === 'ready' && usingCube && (
+            <p className="armed text-sm font-semibold text-good">Turn to start</p>
+          )}
+          {phase === 'armed' && <p className="text-sm font-semibold text-good">Release to start</p>}
+          {phase === 'holding' && <p className="text-sm font-semibold text-warn">Keep holding…</p>}
+          {!usingCube && phase !== 'armed' && phase !== 'holding' && (
+            <p className="text-[13px] text-ink-500">Hold space to start, or connect a smart cube.</p>
+          )}
+          {settings.keyboardCube && phase === 'scrambling' && (
+            <button
+              className="btn btn-ghost !px-2 !py-0.5 !text-[12px]"
+              onClick={() => virtualCube.setState(applyMoves(SOLVED_STATE, scramble))}
+            >
+              Apply the scramble to the virtual cube
+            </button>
           )}
         </section>
+
+        {/* Feedback on the solve just finished, until the next one starts */}
+        {lastSolve && (
+          <section className="panel px-4 py-4 sm:px-5">
+            <PostSolve analysis={analysis} onOpenReplay={lastSolve.id ? () => onOpenSolve(lastSolve.id!) : undefined} />
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-800 pt-3">
+              <button
+                className={`btn !py-1 !text-[13px] ${lastSolve.penalty === '+2' ? '!border-warn !text-warn' : ''}`}
+                onClick={() => void applyPenalty(lastSolve, lastSolve.penalty === '+2' ? 'none' : '+2')}
+              >
+                +2
+              </button>
+              <button
+                className={`btn !py-1 !text-[13px] ${lastSolve.penalty === 'DNF' ? '!border-bad !text-bad' : ''}`}
+                onClick={() => void applyPenalty(lastSolve, lastSolve.penalty === 'DNF' ? 'none' : 'DNF')}
+              >
+                DNF
+              </button>
+              <button className="btn btn-danger !py-1 !text-[13px]" onClick={() => void deleteSolve(lastSolve)}>
+                Delete
+              </button>
+              <dl className="ml-auto flex gap-5">
+                <Stat label="ao5" value={formatTime(ao5)} />
+                <Stat label="ao12" value={formatTime(ao12)} />
+                <Stat label="best" value={formatTime(best)} />
+              </dl>
+            </div>
+          </section>
+        )}
+
+        {!lastSolve && finiteTimes.length > 0 && (
+          <dl className="flex justify-center gap-8">
+            <Stat label="ao5" value={formatTime(ao5)} />
+            <Stat label="ao12" value={formatTime(ao12)} />
+            <Stat label="best" value={formatTime(best)} />
+          </dl>
+        )}
       </div>
 
       <section className="panel flex max-h-[60vh] flex-col overflow-hidden xl:max-h-[calc(100vh-8.5rem)]">
@@ -447,9 +475,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         </header>
         <div className="overflow-y-auto">
           {recent.length === 0 && (
-            <p className="px-4 py-6 text-sm text-ink-400">
-              No solves yet. Turn the scramble above into your cube and solve — the clock runs itself.
-            </p>
+            <p className="px-4 py-6 text-sm text-ink-400">No solves yet.</p>
           )}
           {recent.map((s, i) => (
             <SolveRow key={s.id} solve={s} index={recent.length - i} onOpen={() => s.id && onOpenSolve(s.id)} />
@@ -463,8 +489,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[13px] text-ink-400">{label}</dt>
-      <dd className="tnum font-mono text-lg text-ink-100">{value}</dd>
+      <dt className="text-[12px] text-ink-500">{label}</dt>
+      <dd className="tnum font-mono text-[15px] text-ink-200">{value}</dd>
     </div>
   );
 }
