@@ -274,6 +274,21 @@ the two corners and 10,560 of the three edges; whichever half is further away is
 a bound that cannot over-estimate, which is what makes the first answer found
 the shortest one.
 
+**Which block, not just how long.** A 1x2x3 is one layer thick on one face and
+two deep towards a touching one, which makes twenty-four of them, not twelve —
+the block on the left face reaching down and the block on the bottom face
+reaching left share an edge and two corners but differ in their other two edges.
+All twenty-four are costed for every scramble, listed cheapest first, each named
+by its colours (*white down, red left*) with a swatch and a small cube showing
+the block built and lit. "Eight moves" means nothing on its own; "five moves,
+white down and orange left" tells you which block to look for.
+
+That is also how the marking works. When you finish, the app sees which block
+you built, and tells you both how you did against the best solution **for that
+block** and what the cheapest block on the scramble was. Being told you were
+optimal for a block that cost five when a four was sitting there is a different
+lesson from being told you were one move over.
+
 Two things the solver has to get right to be worth anything:
 
 - **The goal is the block built, not the block built *there*.** Turning the
@@ -441,7 +456,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 446 assertions, runs in a few seconds
+npm test            # 457 assertions, runs in a few seconds
 npm run test:relay  # the relay, driven through a real socket (needs server/venv)
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```

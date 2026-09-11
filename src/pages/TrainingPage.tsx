@@ -11,14 +11,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/app';
-import { SOLVED_STATE, applyMoves, cloneState, isSolved, groupSolved, PIECES, type CubeState } from '../cube/cube';
-import { ROTATIONS } from '../cube/geometry';
+import {
+  SOLVED_STATE,
+  applyMoves,
+  cloneState,
+  groupSolved,
+  isSolved,
+  piecesByColor,
+  PIECES,
+  type CubeState,
+} from '../cube/cube';
 import { ROTATIONS_WITH_AUF, rouxEdgesOriented } from '../analysis/method';
 import { cleanMoveStream } from '../cube/moveStream';
 import { generateScramble } from '../cube/scramble';
 import { formatAlg } from '../cube/alg';
 import { formatSeconds } from '../analysis/stats';
-import { FB_METRIC, solveFirstBlock, type FbResult } from '../analysis/solver/firstBlock';
+import { FACE_COLORS } from '../components/palette';
+import { FB_METRIC, analyseBlocks, type BlockChoice } from '../analysis/solver/firstBlock';
+import { blocksBuilt, type BlockSpec } from '../analysis/solver/blocks';
 import { randomLseCase, solveLse } from '../analysis/solver/lse';
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
 import { useCubeInput } from '../smartcube/useCubeInput';
@@ -39,10 +49,12 @@ const MODES: { id: Mode; name: string; blurb: string }[] = [
 interface Case {
   /** Turns that put the cube into the case, from solved */
   setup: string[];
-  /** Fewest moves to finish, in STM */
+  /** Fewest moves to finish */
   best: number;
   /** A few of the shortest solutions */
   solutions: string[][];
+  /** First block only: what every block on this scramble would cost */
+  blocks?: BlockChoice[];
 }
 
 interface Attempt {
@@ -52,11 +64,16 @@ interface Attempt {
   best: number;
   ms: number;
   thinkMs: number;
+  /** First block only: which block you chose, and what it was worth */
+  chose?: BlockSpec;
+  choseBest?: number;
 }
 
 /** Has the goal been reached? Answered on the cube itself, at any angle. */
 function goalReached(mode: Mode, state: CubeState): boolean {
-  if (mode === 'fb') return ROTATIONS.some((r) => groupSolved(state, r, PIECES.FB));
+  // Any of the twenty-four blocks counts. Which one you build is your choice,
+  // and the whole point of the analyzer is that the choice matters.
+  if (mode === 'fb') return blocksBuilt(state).length > 0;
   if (mode === '4c') return isSolved(state);
   return ROTATIONS_WITH_AUF.some((r) => rouxEdgesOriented(state, r) && groupSolved(state, r, PIECES.UL_UR));
 }
@@ -73,6 +90,9 @@ export default function TrainingPage() {
   const [last, setLast] = useState<Attempt | null>(null);
   const [history, setHistory] = useState<Attempt[]>([]);
   const [thinking, setThinking] = useState(false);
+  /** Costing all twenty-four blocks takes a moment; say so rather than hanging */
+  const [dealing, setDealing] = useState(false);
+  const [cubeState, setCubeState] = useState<CubeState>(() => cloneState(SOLVED_STATE));
   const live = useTurnAnimation();
 
   const phaseRef = useRef<Phase>('idle');
@@ -96,11 +116,17 @@ export default function TrainingPage() {
 
   const deal = useCallback(async () => {
     setReveal(false);
+    setDealing(true);
+    // Let the spinner paint before the solver takes the thread
+    await new Promise((r) => setTimeout(r, 0));
     let next: Case;
     if (mode === 'fb') {
       const { moves } = await generateScramble(settings.randomStateScramble);
-      const r: FbResult = solveFirstBlock(moves, 5);
-      next = { setup: moves, best: r.length, solutions: r.solutions };
+      // Every block costed, not just the one the engine calls home — "how long
+      // is the block" is the wrong question; "which block, and how long" is the
+      // one worth asking of a scramble
+      const blocks = analyseBlocks(moves, 2);
+      next = { setup: moves, best: blocks[0].length, solutions: blocks[0].solutions, blocks };
     } else {
       const goal = mode === 'eolr' ? 'eolr' : 'solved';
       const c = randomLseCase(goal);
@@ -112,6 +138,7 @@ export default function TrainingPage() {
     // With no cube there is nothing to turn the case into and nothing to time,
     // so the case is simply there to look at
     setPhaseBoth(usingCube ? 'setup' : 'armed');
+    setDealing(false);
   }, [mode, settings.randomStateScramble, usingCube]);
 
   // Switching mode puts everything back, rather than carrying a case across
@@ -162,17 +189,23 @@ export default function TrainingPage() {
       const used = cleanMoveStream(
         movesRef.current.map((m, i) => ({ move: m.move, t: (m.cubeTs ?? m.localTs) - startRef.current + i * 0 })),
       ).map((m) => m.move);
+      // Which block did you actually build? Comparing your count against the
+      // best block on the scramble alone would be unfair when you built a
+      // different one, so both are worth saying.
+      const chose = mode === 'fb' ? blocksBuilt(state)[0] : undefined;
+      const choseBest = chose ? c.blocks?.find((b) => b.spec === chose)?.length : undefined;
       const attempt: Attempt = {
         mode,
         used,
         best: c.best,
         ms: performance.now() - startRef.current,
         thinkMs: Math.max(0, startRef.current - armedAtRef.current),
+        chose,
+        choseBest,
       };
       setLast(attempt);
       setHistory((h) => [...h, attempt]);
       setReveal(true);
-      void state;
       void deal();
     },
     [mode, deal],
@@ -182,6 +215,7 @@ export default function TrainingPage() {
     {
       onState: (s, fromCube) => {
         cubeRef.current = s;
+        setCubeState(s);
         if (fromCube) live.jump(s);
         if (phaseRef.current !== 'setup') return;
         const tracker = trackerRef.current;
@@ -193,6 +227,7 @@ export default function TrainingPage() {
       onMove: (m, state) => {
         live.turn(m.move, state);
         cubeRef.current = state;
+        setCubeState(state);
         const p = phaseRef.current;
 
         if (p === 'setup') {
@@ -251,8 +286,9 @@ export default function TrainingPage() {
             ))}
           </div>
           <div className="flex gap-2">
+            {dealing && <span className="self-center text-[12px] text-ink-500">working out the blocks…</span>}
             {phase === 'idle' ? (
-              <button className="btn btn-primary !py-1 !text-[13px]" onClick={() => void deal()}>
+              <button className="btn btn-primary !py-1 !text-[13px]" onClick={() => void deal()} disabled={dealing}>
                 Start
               </button>
             ) : (
@@ -304,9 +340,11 @@ export default function TrainingPage() {
             </p>
           )}
 
+          {/* Your cube, all the way through — it used to freeze on the case the
+              moment you started solving, which is exactly when you want to see it */}
           <CubeView
-            state={phase === 'setup' && usingCube ? (live.animate ? live.shown : cubeRef.current) : caseState}
-            animate={phase === 'setup' && usingCube ? live.animate : null}
+            state={usingCube ? (live.animate ? live.shown : cubeState) : caseState}
+            animate={usingCube ? live.animate : null}
             size={200}
           />
 
@@ -319,16 +357,13 @@ export default function TrainingPage() {
                 <button className="btn btn-ghost !py-1 !text-[13px]" onClick={() => setReveal(true)}>
                   Show me
                 </button>
+              ) : current.blocks ? (
+                <BlockChoices choices={current.blocks} from={caseState} chosen={last?.chose} />
               ) : (
-                <div className="flex flex-col items-center gap-1">
+                <div className="flex flex-col items-center gap-2">
                   {current.solutions.map((sol, i) => (
-                    <p key={i} className="font-mono text-[15px] text-ink-200">
-                      {formatAlg(sol)}
-                    </p>
+                    <SolutionRow key={i} moves={sol} from={caseState} />
                   ))}
-                  {current.solutions.length > 1 && (
-                    <p className="text-[12px] text-ink-500">{current.solutions.length} of the shortest</p>
-                  )}
                 </div>
               )}
             </div>
@@ -342,14 +377,33 @@ export default function TrainingPage() {
 
       {last && (
         <section className="panel px-4 py-4 sm:px-5">
+          {last.chose && (
+            <p className="mb-3 flex items-center justify-center gap-2 text-[13px] text-ink-400">
+              You built <Swatch spec={last.chose} />
+              <span className="text-ink-300">{last.chose.name}</span>
+            </p>
+          )}
           <div className="flex flex-wrap items-baseline justify-center gap-x-8 gap-y-2">
             <Figure
               value={String(last.used.length)}
               label="your solution"
-              note={last.used.length <= last.best ? 'optimal' : `+${last.used.length - last.best} over`}
-              tone={last.used.length <= last.best ? 'good' : 'warn'}
+              note={
+                last.choseBest !== undefined
+                  ? last.used.length <= last.choseBest
+                    ? 'optimal for that block'
+                    : `+${last.used.length - last.choseBest} over for that block`
+                  : last.used.length <= last.best
+                    ? 'optimal'
+                    : `+${last.used.length - last.best} over`
+              }
+              tone={
+                (last.choseBest !== undefined ? last.used.length <= last.choseBest : last.used.length <= last.best)
+                  ? 'good'
+                  : 'warn'
+              }
             />
-            <Figure value={String(last.best)} label="fewest" />
+            {last.choseBest !== undefined && <Figure value={String(last.choseBest)} label="fewest for it" />}
+            <Figure value={String(last.best)} label={last.chose ? 'best block here' : 'fewest'} />
             <Figure value={`${formatSeconds(last.ms)}s`} label="turning" />
             <Figure value={`${formatSeconds(last.thinkMs)}s`} label="thinking" />
           </div>
@@ -375,6 +429,87 @@ export default function TrainingPage() {
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+/** The two colours that name a block: what would be down, and what would be left. */
+function Swatch({ spec }: { spec: BlockSpec }) {
+  return (
+    <span className="inline-flex overflow-hidden rounded-[3px] ring-1 ring-ink-600">
+      <span className="block size-3" style={{ background: FACE_COLORS[spec.down] }} title="down" />
+      <span className="block size-3" style={{ background: FACE_COLORS[spec.left] }} title="left" />
+    </span>
+  );
+}
+
+/**
+ * One solution, with the cube it leaves behind.
+ *
+ * A list of move sequences tells you nothing about which block each one builds.
+ * Drawing the result, with that block's own pieces lit and everything else
+ * dimmed, says it at a glance.
+ */
+function SolutionRow({
+  moves,
+  from,
+  spec,
+  highlighted,
+}: {
+  moves: string[];
+  from: CubeState;
+  spec?: BlockSpec;
+  highlighted?: boolean;
+}) {
+  const after = useMemo(() => applyMoves(from, moves), [from, moves]);
+  const highlight = useMemo(
+    () => (spec ? piecesByColor(spec.pieces, after) : null),
+    [spec, after],
+  );
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-lg px-2 py-1.5 ${highlighted ? 'bg-ink-800' : ''}`}
+    >
+      <CubeView state={after} highlight={highlight} size={62} interactive={false} />
+      <div className="min-w-0">
+        {spec && (
+          <p className="flex items-center gap-1.5 text-[12px] text-ink-400">
+            <Swatch spec={spec} />
+            {spec.name}
+          </p>
+        )}
+        <p className="font-mono text-[15px] text-ink-100">{formatAlg(moves)}</p>
+      </div>
+      <span className="tnum ml-auto font-mono text-sm text-ink-400">{moves.length}</span>
+    </div>
+  );
+}
+
+/** The cheapest blocks on this scramble, best first. */
+function BlockChoices({
+  choices,
+  from,
+  chosen,
+}: {
+  choices: BlockChoice[];
+  from: CubeState;
+  chosen?: BlockSpec;
+}) {
+  const shown = choices.slice(0, 5);
+  return (
+    <div className="flex w-full max-w-[30rem] flex-col gap-1">
+      {shown.map((c) => (
+        <SolutionRow
+          key={c.spec.name}
+          moves={c.solutions[0] ?? []}
+          from={from}
+          spec={c.spec}
+          highlighted={chosen === c.spec}
+        />
+      ))}
+      <p className="mt-1 text-center text-[12px] text-ink-500">
+        best {shown.length} of {choices.length} blocks · worst is {choices[choices.length - 1].length}
+      </p>
     </div>
   );
 }

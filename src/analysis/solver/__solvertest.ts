@@ -8,7 +8,9 @@
 
 import { parseAlg } from '../../cube/alg';
 import { LSE_BANDS, LSE_MOVES, LSE_TRACKED, lseDistance, lseTables, randomLseCase, solveLse } from './lse';
-import { FB_MOVES, FB_TRACKED, blockBuilt, fbTables, firstBlockDone, solveFirstBlock } from './firstBlock';
+import { FB_MOVES, FB_TRACKED, analyseBlocks, blockBuilt, fbTables, firstBlockDone, solveBlock, solveFirstBlock } from './firstBlock';
+import { FIRST_BLOCKS, HOME_BLOCK, blocksBuilt } from './blocks';
+import { SOLVED_STATE, applyMoves } from '../../cube/cube';
 import { MAX_PACKED, isHome, keyOf, mayFollow, positionsAfter, stepped } from './tracking';
 import { ROTATIONS, IDENTITY_PERM } from '../../cube/geometry';
 import { rotationBetween } from '../../cube/alg';
@@ -196,6 +198,46 @@ function anyShorter(
     }
   }
   check('and no two arrangements collide', clashes === 0, String(clashes));
+}
+
+/* ---------------- which block, not just how long ---------------- */
+{
+  // A 1x2x3 is one layer thick on one face and two deep towards a touching one,
+  // so a pair of faces names two different blocks, not one
+  check('there are twenty-four first blocks', FIRST_BLOCKS.length === 24, String(FIRST_BLOCKS.length));
+  check('each is five pieces, two corners and three edges',
+    FIRST_BLOCKS.every((b) => b.tracked.length === 12 && b.cornerAt.length === 6 && b.edgeAt.length === 6));
+  check('and no two are the same set of pieces',
+    new Set(FIRST_BLOCKS.map((b) => [...b.tracked].sort((x, y) => x - y).join())).size === 24);
+  check("the app's home block is the one the engine draws bottom-left",
+    [...HOME_BLOCK.tracked].sort((a, b) => a - b).join() === [...FB_TRACKED].sort((a, b) => a - b).join());
+
+  check('a solved cube has every block built', blocksBuilt(SOLVED_STATE).length === 24);
+  check('a scrambled one has none', blocksBuilt(applyMoves(SOLVED_STATE, parseAlg("R U F' D2 L B"))).length === 0);
+
+  const scramble = parseAlg("F R B' R' F' U' B2 R2 B2 D2 F2 D L2 U R2 U' L2 F");
+  const all = analyseBlocks(scramble, 1);
+  check('every block is costed', all.length === 24, String(all.length));
+  check('cheapest first', all.every((c, i) => i === 0 || c.length >= all[i - 1].length));
+
+  // The solution offered for a block must build THAT block, not merely some block
+  const from = applyMoves(SOLVED_STATE, scramble);
+  let wrongBlock = 0;
+  for (const c of all) {
+    if (!c.solutions.length) { wrongBlock++; continue; }
+    const built = blocksBuilt(applyMoves(from, c.solutions[0]));
+    if (!built.some((b) => b === c.spec)) wrongBlock++;
+  }
+  check('each solution builds the block it is offered for', wrongBlock === 0, String(wrongBlock));
+
+  // Solving a named block directly must agree with the analysis
+  const one = FIRST_BLOCKS[7];
+  check('solving one block agrees with costing them all',
+    solveBlock(one, scramble, 1).length === all.find((c) => c.spec === one)!.length);
+
+  // The home block is one of the twenty-four, never better than the best
+  const home = all.find((c) => c.spec === HOME_BLOCK)!;
+  check('no block beats the cheapest', home.length >= all[0].length);
 }
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

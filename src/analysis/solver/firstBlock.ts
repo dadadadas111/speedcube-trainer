@@ -13,19 +13,12 @@
  * so `r` reads as `R M'` and counts two.
  */
 
-import { PIECES } from '../../cube/cube';
 import { ROTATIONS, IDENTITY_PERM } from '../../cube/geometry';
 import { rotationBetween } from '../../cube/alg';
+import { FIRST_BLOCKS, HOME_BLOCK, type BlockSpec } from './blocks';
 import { mayFollow, moveSet, positionsAfter, stepped, turnsOf } from './tracking';
 
-export const FB_TRACKED = PIECES.FB;
-
-/**
- * PIECES.FB runs corner, edge, corner, edge, edge — so the two groups are
- * picked out by index rather than by slicing.
- */
-const CORNER_AT = [0, 1, 2, 5, 6, 7];
-const EDGE_AT = [3, 4, 8, 9, 10, 11];
+export const FB_TRACKED = HOME_BLOCK.tracked;
 
 /**
  * The turns a Roux solver actually makes: the six faces and M.
@@ -46,6 +39,9 @@ const pick = (at: ArrayLike<number>, which: number[]) => {
   return key;
 };
 
+/** The rotations, as move sequences, for building the finished placements. */
+const ROTATION_SEQS = ROTATIONS.map((rot) => rotationBetween(IDENTITY_PERM as Uint8Array, rot));
+
 /**
  * The block finished, in any of the twenty-four ways it can sit on the cube.
  *
@@ -55,16 +51,24 @@ const pick = (at: ArrayLike<number>, which: number[]) => {
  * harder question than the one being asked, and it will sometimes report six
  * moves for something a person can do in five.
  */
-const HOME_PLACEMENTS: Uint8Array[] = ROTATIONS.map((rot) =>
-  positionsAfter(FB_TRACKED, rotationBetween(IDENTITY_PERM as Uint8Array, rot)),
-);
+const placementsFor = (spec: BlockSpec): Uint8Array[] =>
+  ROTATION_SEQS.map((seq) => positionsAfter(spec.tracked, seq));
+
+interface BlockTables {
+  spec: BlockSpec;
+  placements: Uint8Array[];
+  corners: Map<number, number>;
+  edges: Map<number, number>;
+}
+
+const cache = new Map<string, BlockTables>();
 
 /**
  * Exact distances for one half of the block, from every arrangement it can
  * reach — measured to the nearest of the twenty-four finished placements, so
  * the bound matches the goal the search is actually aiming at.
  */
-function walk(which: number[]): Map<number, number> {
+function walk(which: number[], HOME_PLACEMENTS: Uint8Array[]): Map<number, number> {
   const dist = new Map<number, number>();
   const seen = new Map<number, Uint8Array>();
   const frontier0: number[] = [];
@@ -97,28 +101,30 @@ function walk(which: number[]): Map<number, number> {
   return dist;
 }
 
-let corners: Map<number, number> | null = null;
-let edges: Map<number, number> | null = null;
-
-export function fbTables(): { corners: Map<number, number>; edges: Map<number, number> } {
-  if (!corners || !edges) {
-    corners = walk(CORNER_AT);
-    edges = walk(EDGE_AT);
+/** Tables for one block, built once and kept. */
+export function blockTables(spec: BlockSpec = HOME_BLOCK): BlockTables {
+  const key = spec.tracked.join(',');
+  let t = cache.get(key);
+  if (!t) {
+    const placements = placementsFor(spec);
+    t = { spec, placements, corners: walk(spec.cornerAt, placements), edges: walk(spec.edgeAt, placements) };
+    cache.set(key, t);
   }
-  return { corners, edges };
+  return t;
 }
 
+export const fbTables = () => blockTables(HOME_BLOCK);
+
 /** A lower bound on the moves left: solving either half alone cannot be quicker. */
-function estimate(at: Uint8Array): number {
-  const t = fbTables();
-  const c = t.corners.get(pick(at, CORNER_AT)) ?? 0;
-  const e = t.edges.get(pick(at, EDGE_AT)) ?? 0;
+function estimateWith(t: BlockTables, at: Uint8Array): number {
+  const c = t.corners.get(pick(at, t.spec.cornerAt)) ?? 0;
+  const e = t.edges.get(pick(at, t.spec.edgeAt)) ?? 0;
   return c > e ? c : e;
 }
 
 /** Is the block built, whichever way round the cube is being held? */
-export const blockBuilt = (at: Uint8Array) => {
-  for (const home of HOME_PLACEMENTS) {
+export function builtIn(t: BlockTables, at: Uint8Array): boolean {
+  for (const home of t.placements) {
     let ok = true;
     for (let i = 0; i < home.length; i++) {
       if (at[i] !== home[i]) {
@@ -129,7 +135,9 @@ export const blockBuilt = (at: Uint8Array) => {
     if (ok) return true;
   }
   return false;
-};
+}
+
+export const blockBuilt = (at: Uint8Array) => builtIn(blockTables(HOME_BLOCK), at);
 
 export interface FbResult {
   /** Shortest length in STM */
@@ -145,10 +153,16 @@ export interface FbResult {
  * following a branch whose lower bound already exceeds the depth being tried.
  * The first depth that yields anything is the optimum, by construction.
  */
-export function solveFirstBlock(scramble: string[], maxSolutions = 6, maxDepth = 12): FbResult {
-  fbTables();
-  const start = positionsAfter(FB_TRACKED, scramble);
-  if (blockBuilt(start)) return { length: 0, solutions: [[]] };
+export function solveBlock(
+  spec: BlockSpec,
+  scramble: string[],
+  maxSolutions = 6,
+  maxDepth = 12,
+): FbResult {
+  const t = blockTables(spec);
+  const estimate = (at: Uint8Array) => estimateWith(t, at);
+  const start = positionsAfter(spec.tracked, scramble);
+  if (builtIn(t, start)) return { length: 0, solutions: [[]] };
 
   for (let depth = estimate(start); depth <= maxDepth; depth++) {
     const found: string[][] = [];
@@ -160,7 +174,7 @@ export function solveFirstBlock(scramble: string[], maxSolutions = 6, maxDepth =
       if (left === 0) {
         // The bound is zero for every finished placement, so a full check is
         // only ever worth making there
-        if (bound === 0 && blockBuilt(at)) found.push([...path]);
+        if (bound === 0 && builtIn(t, at)) found.push([...path]);
         return;
       }
       if (bound > left) return;
@@ -180,6 +194,10 @@ export function solveFirstBlock(scramble: string[], maxSolutions = 6, maxDepth =
   return { length: -1, solutions: [] };
 }
 
+/** The app's home block, for callers that do not care which one. */
+export const solveFirstBlock = (scramble: string[], maxSolutions = 6, maxDepth = 12) =>
+  solveBlock(HOME_BLOCK, scramble, maxSolutions, maxDepth);
+
 /** How short the best first block is, without listing them. */
 export function firstBlockLength(scramble: string[]): number {
   return solveFirstBlock(scramble, 1).length;
@@ -187,3 +205,24 @@ export function firstBlockLength(scramble: string[]): number {
 
 /** Is the first block built? Checked on tracked positions, not colours. */
 export const firstBlockDone = (scramble: string[]) => blockBuilt(positionsAfter(FB_TRACKED, scramble));
+
+export interface BlockChoice {
+  spec: BlockSpec;
+  length: number;
+  solutions: string[][];
+}
+
+/**
+ * What every first block would cost, cheapest first.
+ *
+ * This is the question worth asking of a scramble: not "how long is the block"
+ * but "which block, and how long". A scramble with a five-move block somewhere
+ * and nine everywhere else is a completely different scramble depending on
+ * whether you spot it.
+ */
+export function analyseBlocks(scramble: string[], perBlock = 2): BlockChoice[] {
+  return FIRST_BLOCKS.map((spec) => {
+    const r = solveBlock(spec, scramble, perBlock);
+    return { spec, length: r.length, solutions: r.solutions };
+  }).sort((a, b) => a.length - b.length);
+}
