@@ -25,3 +25,28 @@ export const STEP_COLORS: Record<string, string> = {
 export function stepColor(key: string): string {
   return STEP_COLORS[key] ?? '#8697a9';
 }
+
+/**
+ * The short name for a step, for places where the full label is too long to
+ * read at a glance — the row under the ribbon, where what matters is the shape
+ * of "FB 1.72  SB 2.65  CMLL 1.98" rather than the words.
+ */
+const SHORT_STEPS: Record<string, string> = {
+  FB: 'FB',
+  SB: 'SB',
+  CMLL: 'CMLL',
+  EO: '4a',
+  LR: '4b',
+  L4C: '4c',
+  CROSS: 'Cross',
+  F2L1: 'F2L1',
+  F2L2: 'F2L2',
+  F2L3: 'F2L3',
+  F2L4: 'F2L4',
+  OLL: 'OLL',
+  PLL: 'PLL',
+};
+
+export function shortStep(key: string): string {
+  return SHORT_STEPS[key] ?? key;
+}

@@ -33,42 +33,37 @@ export default function PostSolve({
       <StepRibbon steps={analysis.steps} totalMs={analysis.totalMs} height={14} showLabels />
 
       {/* Slow mode leads with the shape of the solution, speed mode with the clock */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-ink-300">
+      <div className="mt-4 flex flex-wrap items-baseline justify-center gap-x-8 gap-y-2">
         {focus === 'slow' ? (
           <>
-            <span>
-              <span className="tnum font-mono text-base text-ink-100">{analysis.totalMoves}</span> moves
-              {refTotal > 0 && (
-                <span className={analysis.totalMoves <= refTotal ? 'text-good' : 'text-warn'}>
-                  {' '}
-                  ({analysis.totalMoves <= refTotal ? '' : '+'}
-                  {analysis.totalMoves - refTotal} vs par)
-                </span>
-              )}
-            </span>
-            <span>
-              <span className="tnum font-mono text-ink-100">{formatSeconds(analysis.totalMs)}s</span> taken
-            </span>
+            <Figure
+              value={String(analysis.totalMoves)}
+              label="moves"
+              note={
+                refTotal > 0
+                  ? `${analysis.totalMoves <= refTotal ? '' : '+'}${analysis.totalMoves - refTotal} vs par`
+                  : undefined
+              }
+              tone={refTotal > 0 ? (analysis.totalMoves <= refTotal ? 'good' : 'warn') : undefined}
+            />
+            <Figure value={`${formatSeconds(analysis.totalMs)}s`} label="taken" />
           </>
         ) : (
           <>
-            <span>
-              <span className="tnum font-mono text-ink-100">{analysis.totalMoves}</span> moves
-            </span>
-            <span>
-              <span className="tnum font-mono text-ink-100">{analysis.tps.toFixed(1)}</span> TPS
-            </span>
+            <Figure value={String(analysis.totalMoves)} label="moves" />
+            <Figure value={analysis.tps.toFixed(1)} label="TPS" />
           </>
         )}
-        <span>
-          <span className="tnum font-mono text-ink-100">{Math.round(analysis.pauseRatio * 100)}%</span> standing still
-        </span>
-        {onOpenReplay && (
+        <Figure value={`${Math.round(analysis.pauseRatio * 100)}%`} label="standing still" />
+      </div>
+
+      {onOpenReplay && (
+        <div className="mt-3 flex justify-center">
           <button type="button" className="btn btn-ghost !px-2 !py-0.5 !text-[13px]" onClick={onOpenReplay}>
             Replay step by step
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Several things about the whole solve, the good ones included */}
       <ul className="mt-3 flex flex-col gap-1.5">
@@ -84,6 +79,27 @@ export default function PostSolve({
       </ul>
 
       {analysis.warning && <p className="mt-2 text-[13px] text-ink-400">{analysis.warning}</p>}
+    </div>
+  );
+}
+
+/** One headline number with its name under it. */
+function Figure({
+  value,
+  label,
+  note,
+  tone,
+}: {
+  value: string;
+  label: string;
+  note?: string;
+  tone?: 'good' | 'warn';
+}) {
+  return (
+    <div className="text-center">
+      <p className="tnum font-mono text-2xl font-semibold leading-none text-ink-100">{value}</p>
+      <p className="mt-1 text-[12px] text-ink-500">{label}</p>
+      {note && <p className={`text-[12px] ${tone === 'good' ? 'text-good' : 'text-warn'}`}>{note}</p>}
     </div>
   );
 }
