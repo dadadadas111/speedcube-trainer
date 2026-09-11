@@ -176,6 +176,26 @@ accepts a packet **newer** than the last move applied — a stale packet arrivin
 late would drag the state backwards, and that is exactly why the clock sometimes
 failed to stop on its own.
 
+### Talking to the cube sparingly
+
+Every request the app makes is a GATT write, and a cube written to several times
+a second can drop the bluetooth link outright. The only thing that polls is the
+timer's third stop-layer, while your hands are still, so that traffic is held to
+**one request every 1.5 seconds, and at most four in a row** before it gives up
+until the cube does something again. Anything you ask for by pressing a button
+goes out immediately; only the automatic polling is rationed.
+
+An exception thrown by one of the app's own event handlers also used to be able
+to escape into the cube's event stream, where a render bug would look exactly
+like a disconnection. Handlers are now called in isolation, and a crash anywhere
+in the UI lands on an error screen you can copy rather than a blank page.
+
+When something does go wrong, **Settings → Connection log** has the last hundred
+or so events — moves with their serial numbers, every command sent, and whether
+the link was closed by the app or given up by the cube. That last distinction
+matters: nothing in the app can close the link on its own, so a drop that shows
+as `DISCONNECTED BY CUBE` came from the radio, not from here.
+
 ## Cube display
 
 The default is a **3D cube** you can drag to rotate (or use the arrow keys),
@@ -281,7 +301,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 315 assertions, runs in a few seconds
+npm test            # 328 assertions, runs in a few seconds
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```
 

@@ -269,27 +269,38 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   }, [finishSolve]);
 
   /**
-   * Third safety net: while running, a pause in turning triggers a poll asking
-   * the cube whether it is solved. This catches a dropped final move without
-   * ever stopping wrongly, because it only stops when the cube itself says so.
-   *
-   * The same pause is what offers the way out: hands still for a few seconds
-   * usually means something went wrong rather than a long think.
+   * Hands still for a few seconds usually means something went wrong rather
+   * than a long think, so offer a way out. This is a screen timer and nothing
+   * more — it must never touch the cube, however often it ticks.
    */
   useEffect(() => {
-    if (phase !== 'running') {
+    if (phase !== 'running' || !usingCube) {
       setStuck(false);
       return;
     }
+    const id = setInterval(() => setStuck(performance.now() - lastMoveAtRef.current > STUCK_MS), 300);
+    return () => clearInterval(id);
+  }, [phase, usingCube]);
+
+  /**
+   * Third safety net for stopping the clock: while running, a pause in turning
+   * asks the cube whether it is solved. This catches a dropped final move
+   * without ever stopping wrongly, because it only stops when the cube says so.
+   *
+   * Every one of those asks is a write to the cube over bluetooth, and writing
+   * to it several times a second is a good way to lose the link — so the rate
+   * limit lives in cubeLink.pollState(), which refuses to ask too often and
+   * gives up after a few tries until the next move.
+   */
+  useEffect(() => {
+    if (phase !== 'running' || cubeStatus !== 'connected') return;
     const id = setInterval(() => {
-      const idle = performance.now() - lastMoveAtRef.current;
       // Only ask after the hands have stopped for a moment — mid-turn there is
       // no need, and it keeps the bluetooth link clear during the solve.
-      if (idle > 1000 && cubeStatus === 'connected') void cubeLink.resync();
-      if (usingCube) setStuck(idle > STUCK_MS);
-    }, 400);
+      if (performance.now() - lastMoveAtRef.current > 1000) void cubeLink.pollState();
+    }, 500);
     return () => clearInterval(id);
-  }, [phase, cubeStatus, usingCube]);
+  }, [phase, cubeStatus]);
 
   useEffect(() => () => stopRaf(), []);
 

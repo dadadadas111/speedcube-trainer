@@ -45,12 +45,18 @@ export default function CubeStatus() {
     }
   };
 
+  // The link dropped on its own. Say so where the connect button is, because
+  // "connect the cube" reads like it was never connected, and it was.
+  const dropped = cubeStatus === 'disconnected' && cubeLink.droppedUnexpectedly;
+
   const dot =
     cubeStatus === 'connected'
       ? 'var(--color-good)'
       : cubeStatus === 'connecting'
         ? 'var(--color-warn)'
-        : 'var(--color-ink-500)';
+        : dropped
+          ? 'var(--color-bad)'
+          : 'var(--color-ink-500)';
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -94,7 +100,7 @@ export default function CubeStatus() {
       ) : (
         <button className="btn !py-1 !text-[13px]" onClick={() => void connect()} disabled={cubeStatus === 'connecting'}>
           <span className="size-2 rounded-full" style={{ background: dot }} />
-          {cubeStatus === 'connecting' ? 'Connecting…' : 'Connect smart cube'}
+          {cubeStatus === 'connecting' ? 'Connecting…' : dropped ? 'Cube dropped — reconnect' : 'Connect smart cube'}
         </button>
       )}
 

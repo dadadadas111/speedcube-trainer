@@ -10,10 +10,17 @@ import { connectGanCube, cubeTimestampLinearFit, type GanCubeConnection, type Ga
 import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isPlausibleState, isSolved, cloneState, type CubeState } from '../cube/cube';
 import { MAC_STORAGE_KEY, normalizeMac } from './mac';
 import { isFreshSerial } from './serial';
+import { CommandBudget, notifyAll } from './dispatch';
 
 export { normalizeMac, savedMacs, forgetMac } from './mac';
 
 export type CubeLinkStatus = 'disconnected' | 'connecting' | 'connected';
+
+export interface CubeLogEntry {
+  t: number;
+  kind: string;
+  detail?: string;
+}
 
 export interface CubeQuaternion {
   x: number;
@@ -68,6 +75,34 @@ export class CubeLink {
   private lastSerial: number | null = null;
   /** Set when the UI can prompt the user for the MAC address */
   askForMac: ((deviceName: string) => Promise<string | null>) | null = null;
+  /** True when the link dropped on its own rather than being closed here */
+  droppedUnexpectedly = false;
+  /** Recent events, for working out what happened when something goes wrong */
+  readonly log: CubeLogEntry[] = [];
+  /**
+   * Every command is a GATT write to the cube, and a cube written to several
+   * times a second can drop the link outright. Idle polling therefore has to
+   * stay calm: at most one request every 1.5s, and only a few in a row before
+   * giving up until the cube does something again.
+   */
+  private budget = new CommandBudget(1500, 4);
+
+  private note(kind: string, detail?: string) {
+    this.log.push({ t: Date.now(), kind, detail });
+    if (this.log.length > 120) this.log.shift();
+  }
+
+  /**
+   * Call every listener, and never let one of them take the others down.
+   *
+   * These callbacks are React handlers. An exception thrown from one used to
+   * escape into the cube's event stream, which is no place for it — a render
+   * bug would silently stop every later move from arriving and look exactly
+   * like the cube disconnecting.
+   */
+  private notify(fn: (l: Listener) => void) {
+    notifyAll(this.listeners, fn, (err) => this.note('listener-error', (err as Error)?.message ?? String(err)));
+  }
 
   static get supported(): boolean {
     return typeof navigator !== 'undefined' && !!(navigator as Navigator).bluetooth;
@@ -83,13 +118,15 @@ export class CubeLink {
   }
 
   private emitStatus() {
-    for (const l of this.listeners) l.status?.(this.status, this.info);
+    this.notify((l) => l.status?.(this.status, this.info));
   }
 
   async connect(): Promise<void> {
     if (this.status !== 'disconnected') return;
     if (!CubeLink.supported) throw new Error('This browser does not support Web Bluetooth. Use Chrome or Edge.');
     this.status = 'connecting';
+    this.droppedUnexpectedly = false;
+    this.note('connecting');
     this.emitStatus();
     try {
       const conn = await connectGanCube(async (device, isFallback) => {
@@ -105,18 +142,23 @@ export class CubeLink {
       this.info = { name: conn.deviceName, mac: conn.deviceMAC };
       this.sub = conn.events$.subscribe((e) => this.handle(e));
       this.status = 'connected';
+      this.budget.refill(performance.now());
+      this.note('connected', `${conn.deviceName} ${conn.deviceMAC}`);
       this.emitStatus();
       await conn.sendCubeCommand({ type: 'REQUEST_HARDWARE' });
       await conn.sendCubeCommand({ type: 'REQUEST_BATTERY' });
       await conn.sendCubeCommand({ type: 'REQUEST_FACELETS' });
     } catch (err) {
       this.status = 'disconnected';
+      this.note('connect-failed', (err as Error)?.message ?? String(err));
       this.emitStatus();
       throw err;
     }
   }
 
   async disconnect(): Promise<void> {
+    this.note('disconnect-requested');
+    this.droppedUnexpectedly = false;
     this.sub?.unsubscribe();
     this.sub = null;
     await this.conn?.disconnect().catch(() => {});
@@ -133,7 +175,27 @@ export class CubeLink {
    */
   async resync(): Promise<void> {
     this.lastSerial = null;
-    await this.conn?.sendCubeCommand({ type: 'REQUEST_FACELETS' });
+    this.budget.spendFreely(performance.now());
+    this.note('resync');
+    await this.conn?.sendCubeCommand({ type: 'REQUEST_FACELETS' }).catch((err) => {
+      this.note('command-failed', (err as Error)?.message ?? String(err));
+    });
+  }
+
+  /**
+   * Ask the cube what it is showing, but only if we have not just asked.
+   *
+   * Used by the timer to catch a dropped final move. It has to be rate limited:
+   * this fires from a timer while the hands are still, and hammering the cube
+   * with writes is a good way to lose the link altogether. The budget refills
+   * on the next move.
+   */
+  async pollState(): Promise<void> {
+    if (!this.conn || this.status !== 'connected') return;
+    if (!this.budget.take(performance.now())) return;
+    await this.conn.sendCubeCommand({ type: 'REQUEST_FACELETS' }).catch((err) => {
+      this.note('command-failed', (err as Error)?.message ?? String(err));
+    });
   }
 
   /** Wait for the next state packet from the cube, or time out. */
@@ -177,6 +239,8 @@ export class CubeLink {
       this.setState(cloneState(SOLVED_STATE), true);
       return true;
     }
+    this.note('reset');
+    this.budget.spendFreely(performance.now());
     await this.conn.sendCubeCommand({ type: 'REQUEST_RESET' });
     this.lastSerial = null;
     this.setState(cloneState(SOLVED_STATE), true);
@@ -190,13 +254,14 @@ export class CubeLink {
 
   private setState(s: CubeState, fromCube: boolean) {
     this.state = s;
-    for (const l of this.listeners) l.state?.(s, fromCube);
+    this.notify((l) => l.state?.(s, fromCube));
   }
 
   private handle(e: GanCubeEvent) {
     switch (e.type) {
       case 'MOVE': {
         this.lastSerial = e.serial;
+        this.budget.refill(performance.now());
         this.state = applyMove(this.state, e.move);
         const lm: LiveMove = {
           move: e.move,
@@ -204,8 +269,9 @@ export class CubeLink {
           cubeTs: e.cubeTimestamp,
           raw: e,
         };
-        for (const l of this.listeners) l.move?.(lm, this.state);
-        for (const l of this.listeners) l.state?.(this.state, false);
+        this.note('move', `${e.move} #${e.serial}`);
+        this.notify((l) => l.move?.(lm, this.state));
+        this.notify((l) => l.state?.(this.state, false));
         break;
       }
       case 'FACELETS': {
@@ -218,7 +284,8 @@ export class CubeLink {
         if (!truth || !isPlausibleState(truth)) {
           // Decrypted to garbage: the key is wrong, so the MAC was mistyped.
           this.garbledCount++;
-          for (const l of this.listeners) l.garbled?.();
+          this.note('garbled');
+          this.notify((l) => l.garbled?.());
           break;
         }
         // Drop snapshots older than the last applied move, or the app's state
@@ -233,11 +300,12 @@ export class CubeLink {
       }
       case 'GYRO':
         this.lastQuaternion = e.quaternion;
-        for (const l of this.listeners) l.gyro?.(e.quaternion);
+        this.notify((l) => l.gyro?.(e.quaternion));
         break;
       case 'BATTERY':
         if (this.info) this.info.battery = e.batteryLevel;
-        for (const l of this.listeners) l.battery?.(e.batteryLevel);
+        this.note('battery', `${e.batteryLevel}%`);
+        this.notify((l) => l.battery?.(e.batteryLevel));
         this.emitStatus();
         break;
       case 'HARDWARE':
@@ -246,9 +314,15 @@ export class CubeLink {
           this.info.software = e.softwareVersion;
           this.info.gyro = e.gyroSupported;
         }
+        this.note('hardware', `${e.hardwareName} ${e.softwareVersion}`);
         this.emitStatus();
         break;
       case 'DISCONNECT':
+        // The browser fired gattserverdisconnected: the radio link itself is
+        // gone. Nothing in the app can close it, so reaching here while still
+        // in use means the cube or the link gave up.
+        this.note('DISCONNECTED BY CUBE');
+        this.droppedUnexpectedly = true;
         this.status = 'disconnected';
         this.info = null;
         this.conn = null;

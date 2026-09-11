@@ -261,6 +261,8 @@ export default function SettingsPage() {
           )}
         </div>
 
+        <CubeLog />
+
         <h3 className="mt-5 text-sm font-semibold">Saved MAC addresses</h3>
         <p className="mt-1 max-w-[65ch] text-[13px] text-ink-400">
           GAN encrypts its data with a key salted from the MAC address, so one is required. Chrome on desktop reads
@@ -334,5 +336,46 @@ function Toggle({
         />
       </button>
     </Row>
+  );
+}
+
+
+/**
+ * What the cube has been doing lately.
+ *
+ * A bluetooth link that drops mid-scramble leaves nothing behind to look at, so
+ * the connection keeps a short log of what it saw — moves with their serial
+ * numbers, every command sent, and whether the link was closed here or given up
+ * by the cube. Copy it out when something goes wrong.
+ */
+function CubeLog() {
+  const [, force] = useState(0);
+  const entries = cubeLink.log;
+  const text = entries
+    .map((e) => `${new Date(e.t).toLocaleTimeString('en-GB')}.${String(e.t % 1000).padStart(3, '0')}  ${e.kind}${e.detail ? '  ' + e.detail : ''}`)
+    .join('\n');
+  return (
+    <details className="mt-5">
+      <summary className="cursor-pointer text-sm font-semibold">Connection log ({entries.length})</summary>
+      <div className="mt-2 flex gap-2">
+        <button className="btn !py-1 !text-[12px]" onClick={() => force((n) => n + 1)}>
+          Refresh
+        </button>
+        <button
+          className="btn !py-1 !text-[12px]"
+          disabled={!entries.length}
+          onClick={() => void navigator.clipboard?.writeText(text)}
+        >
+          Copy
+        </button>
+      </div>
+      {entries.length === 0 ? (
+        <p className="mt-2 text-[13px] text-ink-500">Nothing yet.</p>
+      ) : (
+        <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-ink-700 bg-ink-900 p-3 font-mono text-[12px] leading-relaxed text-ink-300">
+          {text}
+        </pre>
+      )}
+    </details>
   );
 }
