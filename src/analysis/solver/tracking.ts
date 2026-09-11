@@ -77,12 +77,22 @@ export function positionsAfter(tracked: number[], scramble: string[]): Uint8Arra
 }
 
 /**
+ * The most stickers that pack into one key: 54^9 is under 2^53, 54^10 is not.
+ */
+export const MAX_PACKED = 9;
+
+/**
  * A number standing for one arrangement of the tracked stickers.
  *
- * Positions are below 54, so up to nine of them pack into a double without
- * losing anything (54^9 is under 2^53). Beyond that, split the set.
+ * Positions are below 54, so up to nine of them pack into a double exactly.
+ * Past that the arithmetic silently loses the low digits and different
+ * arrangements start sharing a key — which does not fail, it just quietly
+ * answers wrong. Hence the refusal rather than a comment.
  */
 export function keyOf(positions: ArrayLike<number>, count = positions.length): number {
+  if (count > MAX_PACKED) {
+    throw new Error(`keyOf: ${count} positions cannot pack into one number; split the set`);
+  }
   let key = 0;
   for (let i = 0; i < count; i++) key = key * 54 + positions[i];
   return key;
