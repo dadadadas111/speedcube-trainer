@@ -12,6 +12,7 @@
  * move sequence, so the mapping from "sticker" to "where it is now" is exact.
  */
 
+import { ALL_CUBIES, type CubeState } from '../../cube/cube';
 import { MOVE_PERMS } from '../../cube/geometry';
 
 /** Where a sticker at each position ends up. `applyPerm` does out[i] = s[perm[i]],
@@ -72,6 +73,44 @@ export function positionsAfter(tracked: number[], scramble: string[]): Uint8Arra
     const next = new Uint8Array(54);
     for (let i = 0; i < 54; i++) next[i] = to[at[i]];
     at.set(next);
+  }
+  return Uint8Array.from(tracked.map((f) => at[f]));
+}
+
+/**
+ * Where the tracked stickers sit on a cube you are looking at.
+ *
+ * The move-sequence version above only works for a case the app dealt itself.
+ * This one reads the positions back out of the colours, which lets the solver
+ * start from whatever is in your hands: every piece carries a unique set of
+ * colours, so where a piece has got to is never ambiguous even though two
+ * stickers of the same colour are.
+ */
+const HOME_BY_COLOURS = (() => {
+  const byKey = new Map<string, number[]>();
+  for (const cubie of ALL_CUBIES) {
+    const key = cubie
+      .map((f) => Math.floor(f / 9))
+      .sort((a, b) => a - b)
+      .join(',');
+    byKey.set(key, cubie);
+  }
+  return byKey;
+})();
+
+export function positionsFromState(state: CubeState, tracked: number[]): Uint8Array | null {
+  const at = new Uint8Array(54);
+  for (const cubie of ALL_CUBIES) {
+    const colours = cubie.map((f) => state[f]);
+    const home = HOME_BY_COLOURS.get([...colours].sort((a, b) => a - b).join(','));
+    // A cube read through a wrong key, or mid-turn, can show a piece that does
+    // not exist. Better to say so than to solve for a cube that is not there.
+    if (!home || home.length !== cubie.length) return null;
+    for (let i = 0; i < cubie.length; i++) {
+      const homeFacelet = home.find((f) => Math.floor(f / 9) === colours[i]);
+      if (homeFacelet === undefined) return null;
+      at[homeFacelet] = cubie[i];
+    }
   }
   return Uint8Array.from(tracked.map((f) => at[f]));
 }

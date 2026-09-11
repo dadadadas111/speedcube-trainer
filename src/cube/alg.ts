@@ -172,3 +172,25 @@ export function isRotationPerm(p: Uint8Array): boolean {
   const k = permKey(p);
   return ROTATIONS.some((r) => permKey(r) === k);
 }
+
+/**
+ * Tidy a sequence: merge turns of the same layer that end up next to each
+ * other, and drop the ones that cancel outright.
+ *
+ * Useful where a route is built by joining two paths — the join almost always
+ * has `M` meeting `M'` or similar, and nobody wants to perform both.
+ */
+export function simplifyMoves(moves: string[]): string[] {
+  const out: string[] = [];
+  for (const m of moves) {
+    const prev = out[out.length - 1];
+    if (prev && moveFace(prev) === moveFace(m)) {
+      const merged = makeMove(moveFace(m), moveAmount(prev) + moveAmount(m));
+      out.pop();
+      if (merged) out.push(merged);
+      continue;
+    }
+    out.push(m);
+  }
+  return out;
+}

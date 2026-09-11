@@ -7,13 +7,21 @@
  */
 
 import { parseAlg } from '../../cube/alg';
-import { LSE_BANDS, LSE_MOVES, LSE_TRACKED, lseDistance, lseTables, randomLseCase, solveLse } from './lse';
+import { LSE_BANDS, LSE_MOVES, LSE_TRACKED, lseDistance, lseSetupFromState, lseTables, solveLseFromState, randomLseCase, solveLse } from './lse';
+import { ROTATIONS_WITH_AUF, rouxEdgesOriented } from '../method';
+import { PIECES, groupSolved as groupIsSolved } from '../../cube/cube';
 import { FB_MOVES, FB_TRACKED, analyseBlocks, blockBuilt, fbTables, firstBlockDone, solveBlock, solveFirstBlock } from './firstBlock';
 import { FIRST_BLOCKS, HOME_BLOCK, blocksBuilt } from './blocks';
-import { SOLVED_STATE, applyMoves } from '../../cube/cube';
+import { SOLVED_STATE, applyMoves, type CubeState } from '../../cube/cube';
 import { MAX_PACKED, isHome, keyOf, mayFollow, positionsAfter, stepped } from './tracking';
 import { ROTATIONS, IDENTITY_PERM } from '../../cube/geometry';
 import { rotationBetween } from '../../cube/alg';
+
+/** How far a cube in hand is from EOLR, via the state reader. */
+const lseDistanceOfState = (state: CubeState) => {
+  const sol = solveLseFromState(state, 'eolr');
+  return sol ? sol.length : -1;
+};
 
 let fails = 0;
 const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.log('FAIL ' + n + (x ? '  <' + x + '>' : '')); } else console.log('ok   ' + n); };
@@ -86,6 +94,29 @@ function anyShorter(
   }
   check('EOLR: forty cases solved, every one reaching the goal', eolrBad === 0, String(eolrBad));
 
+  /**
+   * The solver and the app have to mean the same thing by "EOLR done".
+   *
+   * They did not. With U turns mixed in, an odd number of M quarters can leave
+   * every edge's U/D sticker back on U or D while the centres sit a quarter
+   * out — the solver called that finished, the trainer refused to accept it,
+   * and an attempt could never end.
+   */
+  const uiSaysEolrDone = (state: CubeState) =>
+    ROTATIONS_WITH_AUF.some((r) => rouxEdgesOriented(state, r) && groupIsSolved(state, r, PIECES.UL_UR));
+
+  let disagree = 0;
+  for (let i = 0; i < 60; i++) {
+    const c = randomLseCase('eolr');
+    const sol = solveLse(c.setup, 'eolr')!;
+    const after = applyMoves(SOLVED_STATE, [...c.setup, ...sol.moves]);
+    if (uiSaysEolrDone(after) !== (lseDistance([...c.setup, ...sol.moves], 'eolr') === 0)) disagree++;
+  }
+  check('the solver and the app agree on when EOLR is finished', disagree === 0, `${disagree}/60`);
+
+  check('a half-turned slice is still EOLR', lseDistance(['M2'], 'eolr') === 0);
+  check('a quarter-turned one is not', lseDistance(['M'], 'eolr') > 0);
+
   check('a case is never handed out already finished', randomLseCase('eolr').best >= 4);
 
   // The long half of the 4c positions is left out on purpose: nobody drills a
@@ -105,6 +136,27 @@ function anyShorter(
   check('EOLR cases too', eolrOut === 0, String(eolrOut));
   check('4c cases have their edges oriented and placed already',
     lseDistance(randomLseCase('solved').setup, 'eolr') === 0);
+
+  /**
+   * Case after case without putting the cube down.
+   *
+   * A case set up from solved works exactly once: the cube does not end solved
+   * after EOLR, so the next one would be impossible to reach. The route has to
+   * start from wherever the cube actually is.
+   */
+  {
+    let state = applyMoves(SOLVED_STATE, randomLseCase('eolr').setup);
+    let failed = 0;
+    for (let round = 0; round < 5; round++) {
+      const c = randomLseCase('eolr');
+      const setup = lseSetupFromState(state, c.key);
+      if (!setup) { failed++; break; }
+      state = applyMoves(state, setup);
+      // Having followed it, the cube must be in the case that was dealt
+      if (lseDistance([...c.setup], 'eolr') !== lseDistanceOfState(state)) failed++;
+    }
+    check('five cases in a row from an unsolved cube', failed === 0, String(failed));
+  }
 }
 
 /* ---------------- the first block ---------------- */

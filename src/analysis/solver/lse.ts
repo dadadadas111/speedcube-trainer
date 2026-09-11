@@ -13,12 +13,15 @@
  */
 
 import { LSE_UD_FACELETS, PIECES, U_CENTER_FACELET } from '../../cube/cube';
-import { keyOf, moveSet, positionsAfter, stepped, turnsOf } from './tracking';
+import type { CubeState } from '../../cube/cube';
+import { simplifyMoves } from '../../cube/alg';
+import { keyOf, moveSet, positionsAfter, positionsFromState, stepped, turnsOf } from './tracking';
 
 /** UL and UR come first in LSE_UD_FACELETS, then the four slice edges. */
 const UL = 0;
 const UR = 1;
 const AUF_MARKER = LSE_UD_FACELETS.length;
+const CENTRE = AUF_MARKER + 1;
 
 export const LSE_TRACKED = [...LSE_UD_FACELETS, PIECES.U_CORNERS[0], U_CENTER_FACELET];
 export const LSE_MOVES = moveSet(turnsOf(['M', 'U']));
@@ -38,12 +41,20 @@ const U_RING: number[][] = LSE_TRACKED.map((f) => {
 const onUorD = (p: number) => p < 9 || (p >= 27 && p < 36);
 
 /**
- * Edges oriented, and UL/UR in their own slots.
+ * Edges oriented, the slice aligned, and UL/UR in their own slots.
  *
  * Measured against the corner rather than against the solved cube: the whole
  * top layer being turned is an AUF, which 4c deals with, not a mistake.
+ *
+ * The slice check is not redundant, tempting though it is to drop it. With U
+ * turns mixed in, an odd number of M quarters can leave every edge's U/D
+ * sticker back on U or D while the centres sit a quarter turn out — which is
+ * not EO done, and the rest of the app has always said so. Without this the
+ * solver called such positions finished and the trainer then refused to accept
+ * them, which is the same disagreement from both ends.
  */
 function isEolrDone(at: ArrayLike<number>): boolean {
+  if (!onUorD(at[CENTRE])) return false;
   for (let i = 0; i < LSE_UD_FACELETS.length; i++) if (!onUorD(at[i])) return false;
   const auf = U_RING[AUF_MARKER].indexOf(at[AUF_MARKER]);
   if (auf < 0) return false;
@@ -138,30 +149,64 @@ export interface Solution {
   length: number;
 }
 
-/** The shortest way to finish from here. */
-export function solveLse(scramble: string[], goal: LseGoal = 'solved'): Solution | null {
-  const t = lseTables();
-  const dist = goal === 'solved' ? t.toSolved : t.toEolr;
-  let at = positionsAfter(LSE_TRACKED, scramble);
+/** Walk downhill through the table, one turn at a time, to the nearest goal. */
+function descend(start: Uint8Array, dist: Map<number, number>): Solution | null {
+  let at = start;
   let d = dist.get(keyOf(at));
   if (d === undefined) return null;
 
   const moves: string[] = [];
   while (d > 0) {
-    let stepped_ = false;
+    let moved = false;
     for (let m = 0; m < LSE_MOVES.names.length; m++) {
       const to = stepped(at, LSE_MOVES.to[m]);
       if (dist.get(keyOf(to)) === d - 1) {
         moves.push(LSE_MOVES.names[m]);
         at = to;
         d--;
-        stepped_ = true;
+        moved = true;
         break;
       }
     }
-    if (!stepped_) return null;
+    if (!moved) return null;
   }
   return { moves, length: moves.length };
+}
+
+/** The shortest way to finish from here. */
+export function solveLse(scramble: string[], goal: LseGoal = 'solved'): Solution | null {
+  const t = lseTables();
+  return descend(positionsAfter(LSE_TRACKED, scramble), goal === 'solved' ? t.toSolved : t.toEolr);
+}
+
+/** The same, for a cube in front of you rather than a case the app dealt. */
+export function solveLseFromState(state: CubeState, goal: LseGoal = 'solved'): Solution | null {
+  const at = positionsFromState(state, LSE_TRACKED);
+  if (!at) return null;
+  const t = lseTables();
+  return descend(at, goal === 'solved' ? t.toSolved : t.toEolr);
+}
+
+/**
+ * How to get from the cube in your hands into a given case.
+ *
+ * Always via solved, which is not the shortest route but is always a route —
+ * and it is what makes case after case possible without putting the cube down.
+ * A case set up from solved only works once: the cube does not end solved after
+ * EOLR, so the second case would be impossible to reach.
+ *
+ * Null when the cube is not in the last-six-edges group at all, which is a real
+ * answer: there is nothing to do but solve the rest of it first.
+ */
+export function lseSetupFromState(state: CubeState, caseKey: number): string[] | null {
+  const t = lseTables();
+  const at = positionsFromState(state, LSE_TRACKED);
+  if (!at) return null;
+  const home = descend(at, t.toSolved);
+  const route = t.route.get(caseKey);
+  if (!home || !route) return null;
+  // The join between the two halves almost always has an M meeting an M'
+  return simplifyMoves([...home.moves, ...route]);
 }
 
 /** How far from the goal, without building the solution. */
@@ -187,7 +232,10 @@ const BANDS: Record<LseGoal, { min: number; max: number }> = {
 };
 
 /** A case to train on: the turns that set it up, and how short the best is. */
-export function randomLseCase(goal: LseGoal, band = BANDS[goal]): { setup: string[]; best: number } {
+export function randomLseCase(
+  goal: LseGoal,
+  band = BANDS[goal],
+): { key: number; setup: string[]; best: number } {
   const t = lseTables();
   const dist = goal === 'solved' ? t.toSolved : t.toEolr;
   const pool: number[] = [];
@@ -199,7 +247,7 @@ export function randomLseCase(goal: LseGoal, band = BANDS[goal]): { setup: strin
     pool.push(key);
   }
   const key = pool[Math.floor(Math.random() * pool.length)];
-  return { setup: t.route.get(key)!, best: dist.get(key)! };
+  return { key, setup: t.route.get(key)!, best: dist.get(key)! };
 }
 
 export { BANDS as LSE_BANDS };

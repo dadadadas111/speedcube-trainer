@@ -1,5 +1,6 @@
 import { SOLVED_STATE, applyMoves, toKociemba, isSolved, canonicalKey, PIECES, groupSolved, isKnownMove } from './cube';
 import { MOVE_PERMS, ROTATIONS } from './geometry';
+import { simplifyMoves } from './alg';
 
 let fails = 0;
 const check = (name: string, cond: boolean, extra = '') => {
@@ -82,6 +83,27 @@ for (const [name, perm] of Object.entries(MOVE_PERMS)) {
       try { applyMoves(SOLVED_STATE, [m]); return false; } catch { return true; }
     }));
   check('inherited property names are not moves', !isKnownMove('toString') && !isKnownMove('constructor'));
+}
+
+/* ---- Tidying a sequence must never change what it does ---- */
+{
+  const same = (a: string[], b: string[]) =>
+    toKociemba(applyMoves(SOLVED_STATE, a)) === toKociemba(applyMoves(SOLVED_STATE, b));
+  const cases = [
+    ['M', "M'"],
+    ['M', 'M'],
+    ['U', 'U', 'U'],
+    ['R', "R'", 'U'],
+    ['M', 'U', "U'", "M'"],
+    ['M2', 'M2'],
+    ["R'", 'U', 'F', "F'", "U'", 'R'],
+  ];
+  check('simplifying leaves the cube where it was', cases.every((c) => same(c, simplifyMoves(c))));
+  check('and never makes a sequence longer', cases.every((c) => simplifyMoves(c).length <= c.length));
+  check('turns that cancel through a cancelled pair go too',
+    simplifyMoves(['M', 'U', "U'", "M'"]).length === 0);
+  check('a sequence with nothing to merge is left alone',
+    simplifyMoves(['R', 'U', "F'"]).join(' ') === "R U F'");
 }
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

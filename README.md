@@ -265,6 +265,15 @@ time are separated too, since they are different problems.
 Without a cube it still deals cases and shows the answer; it just cannot mark
 your work.
 
+**Nothing here needs a solved cube.** Your cube does not end solved after
+building a first block, so a case defined as "apply this scramble from solved"
+works exactly once and then tells you it has lost track. First block therefore
+has no scramble at all — scramble it however you like and the app reads the
+position straight off the colours, starting as soon as your hands stop. The last
+six edges do get a setup, but it is routed from wherever the cube is rather than
+from solved, with the join tidied up so the two halves do not undo each other in
+front of you.
+
 **The solutions are exact, not close.** The last six edges need no search at
 all: ⟨M, U⟩ has 184,320 positions, so walking all of them once answers every
 question about them — including how far a position is from having its edges
@@ -456,7 +465,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 457 assertions, runs in a few seconds
+npm test            # 465 assertions, runs in a few seconds
 npm run test:relay  # the relay, driven through a real socket (needs server/venv)
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```

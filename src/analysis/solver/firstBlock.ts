@@ -16,7 +16,8 @@
 import { ROTATIONS, IDENTITY_PERM } from '../../cube/geometry';
 import { rotationBetween } from '../../cube/alg';
 import { FIRST_BLOCKS, HOME_BLOCK, type BlockSpec } from './blocks';
-import { mayFollow, moveSet, positionsAfter, stepped, turnsOf } from './tracking';
+import type { CubeState } from '../../cube/cube';
+import { mayFollow, moveSet, positionsAfter, positionsFromState, stepped, turnsOf } from './tracking';
 
 export const FB_TRACKED = HOME_BLOCK.tracked;
 
@@ -159,9 +160,18 @@ export function solveBlock(
   maxSolutions = 6,
   maxDepth = 12,
 ): FbResult {
+  return solveBlockFrom(spec, positionsAfter(spec.tracked, scramble), maxSolutions, maxDepth);
+}
+
+/** The same, starting from where the pieces actually are. */
+export function solveBlockFrom(
+  spec: BlockSpec,
+  start: Uint8Array,
+  maxSolutions = 6,
+  maxDepth = 12,
+): FbResult {
   const t = blockTables(spec);
   const estimate = (at: Uint8Array) => estimateWith(t, at);
-  const start = positionsAfter(spec.tracked, scramble);
   if (builtIn(t, start)) return { length: 0, solutions: [[]] };
 
   for (let depth = estimate(start); depth <= maxDepth; depth++) {
@@ -225,4 +235,22 @@ export function analyseBlocks(scramble: string[], perBlock = 2): BlockChoice[] {
     const r = solveBlock(spec, scramble, perBlock);
     return { spec, length: r.length, solutions: r.solutions };
   }).sort((a, b) => a.length - b.length);
+}
+
+/**
+ * The same question asked of the cube in your hands.
+ *
+ * This is what lets first-block training run case after case: your cube does
+ * not end solved after building a block, so there is no scramble-from-solved to
+ * apply. Scramble it however you like and the app reads the position off it.
+ */
+export function analyseBlocksFromState(state: CubeState, perBlock = 2): BlockChoice[] | null {
+  const out: BlockChoice[] = [];
+  for (const spec of FIRST_BLOCKS) {
+    const at = positionsFromState(state, spec.tracked);
+    if (!at) return null;
+    const r = solveBlockFrom(spec, at, perBlock);
+    out.push({ spec, length: r.length, solutions: r.solutions });
+  }
+  return out.sort((a, b) => a.length - b.length);
 }

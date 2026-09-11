@@ -23,13 +23,12 @@ import {
 } from '../cube/cube';
 import { ROTATIONS_WITH_AUF, rouxEdgesOriented } from '../analysis/method';
 import { cleanMoveStream } from '../cube/moveStream';
-import { generateScramble } from '../cube/scramble';
 import { formatAlg } from '../cube/alg';
 import { formatSeconds } from '../analysis/stats';
 import { FACE_COLORS } from '../components/palette';
-import { FB_METRIC, analyseBlocks, type BlockChoice } from '../analysis/solver/firstBlock';
+import { FB_METRIC, analyseBlocksFromState, type BlockChoice } from '../analysis/solver/firstBlock';
 import { blocksBuilt, type BlockSpec } from '../analysis/solver/blocks';
-import { randomLseCase, solveLse } from '../analysis/solver/lse';
+import { lseSetupFromState, randomLseCase, solveLse } from '../analysis/solver/lse';
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import { cubeLink, type LiveMove } from '../smartcube/connection';
@@ -38,16 +37,24 @@ import CubeView from '../components/CubeView';
 import ScrambleGuide from '../components/ScrambleGuide';
 
 type Mode = 'fb' | 'eolr' | '4c';
-type Phase = 'idle' | 'setup' | 'armed' | 'running';
+/**
+ * 'setup' is turning the cube into the case. First block has no such step —
+ * you scramble it yourself, which is the only way the mode can run case after
+ * case: your cube does not end solved after building a block, so there is no
+ * scramble-from-solved left to apply.
+ */
+type Phase = 'idle' | 'setup' | 'scrambling' | 'armed' | 'running';
 
 const MODES: { id: Mode; name: string; blurb: string }[] = [
-  { id: 'fb', name: 'First block', blurb: 'Shortest 1x2x3 from a full scramble' },
+  { id: 'fb', name: 'First block', blurb: 'Scramble it yourself, then find the shortest 1x2x3' },
   { id: 'eolr', name: 'EOLR', blurb: 'Orient the six edges and place UL/UR' },
   { id: '4c', name: 'LSE 4c', blurb: 'Finish the M slice' },
 ];
 
 interface Case {
-  /** Turns that put the cube into the case, from solved */
+  /** The cube the setup starts from — not solved, after the first case */
+  from: CubeState;
+  /** Turns that put the cube into the case, from wherever it is now */
   setup: string[];
   /** Fewest moves to finish */
   best: number;
@@ -92,6 +99,11 @@ export default function TrainingPage() {
   const [thinking, setThinking] = useState(false);
   /** Costing all twenty-four blocks takes a moment; say so rather than hanging */
   const [dealing, setDealing] = useState(false);
+  /** Something the app cannot do from here, said plainly */
+  const [problem, setProblem] = useState<string | null>(null);
+  /** Turns made since the last analysis, so scrambling can arm itself */
+  const scrambleTurnsRef = useRef(0);
+  const lastTurnAtRef = useRef(0);
   const [cubeState, setCubeState] = useState<CubeState>(() => cloneState(SOLVED_STATE));
   const live = useTurnAnimation();
 
@@ -110,36 +122,72 @@ export default function TrainingPage() {
 
   /** The cube as the case leaves it, for showing what you are looking at. */
   const caseState = useMemo(
-    () => (current ? applyMoves(SOLVED_STATE, current.setup) : cloneState(SOLVED_STATE)),
+    () => (current ? applyMoves(current.from, current.setup) : cloneState(SOLVED_STATE)),
     [current],
   );
 
+  /**
+   * First block: look at the cube as it is now and cost every block on it.
+   * There is no case to deal — your cube IS the case.
+   */
+  const analyseNow = useCallback(() => {
+    setDealing(true);
+    const blocks = analyseBlocksFromState(cubeRef.current, 2);
+    setDealing(false);
+    if (!blocks) {
+      setProblem('That cube does not read as a cube. Sync it from the top bar.');
+      return;
+    }
+    setProblem(null);
+    const next: Case = {
+      from: cloneState(cubeRef.current),
+      setup: [],
+      best: blocks[0].length,
+      solutions: blocks[0].solutions,
+      blocks,
+    };
+    caseRef.current = next;
+    setCurrent(next);
+    setReveal(false);
+    setPhaseBoth('armed');
+  }, []);
+
   const deal = useCallback(async () => {
     setReveal(false);
+    setProblem(null);
+    if (mode === 'fb') {
+      // Nothing to apply — scramble it however you like and say when
+      caseRef.current = null;
+      setCurrent(null);
+      setPhaseBoth(usingCube ? 'scrambling' : 'armed');
+      if (!usingCube) analyseNow();
+      return;
+    }
     setDealing(true);
     // Let the spinner paint before the solver takes the thread
     await new Promise((r) => setTimeout(r, 0));
-    let next: Case;
-    if (mode === 'fb') {
-      const { moves } = await generateScramble(settings.randomStateScramble);
-      // Every block costed, not just the one the engine calls home — "how long
-      // is the block" is the wrong question; "which block, and how long" is the
-      // one worth asking of a scramble
-      const blocks = analyseBlocks(moves, 2);
-      next = { setup: moves, best: blocks[0].length, solutions: blocks[0].solutions, blocks };
-    } else {
-      const goal = mode === 'eolr' ? 'eolr' : 'solved';
-      const c = randomLseCase(goal);
-      const sol = solveLse(c.setup, goal);
-      next = { setup: c.setup, best: c.best, solutions: sol ? [sol.moves] : [] };
+    const goal = mode === 'eolr' ? 'eolr' : 'solved';
+    const c = randomLseCase(goal);
+    const sol = solveLse(c.setup, goal);
+    // From where the cube is, not from solved: after an EOLR attempt the cube
+    // is not solved, so a scramble-from-solved would be impossible to follow
+    const setup = usingCube ? lseSetupFromState(cubeRef.current, c.key) : c.setup;
+    setDealing(false);
+    if (!setup) {
+      setProblem('Solve the cube first — this mode starts from the last six edges.');
+      setPhaseBoth('idle');
+      return;
     }
+    const next: Case = {
+      from: cloneState(cubeRef.current),
+      setup,
+      best: c.best,
+      solutions: sol ? [sol.moves] : [],
+    };
     caseRef.current = next;
     setCurrent(next);
-    // With no cube there is nothing to turn the case into and nothing to time,
-    // so the case is simply there to look at
     setPhaseBoth(usingCube ? 'setup' : 'armed');
-    setDealing(false);
-  }, [mode, settings.randomStateScramble, usingCube]);
+  }, [mode, usingCube, analyseNow]);
 
   // Switching mode puts everything back, rather than carrying a case across
   useEffect(() => {
@@ -151,13 +199,35 @@ export default function TrainingPage() {
     setHistory([]);
   }, [mode]);
 
-  // Rebuild the guide whenever a case arrives
+  // Rebuild the guide whenever a case arrives. It has to know where the cube
+  // was when the case was dealt: after the first case that is not solved, and a
+  // guide measuring from solved would never see you arrive.
   useEffect(() => {
     if (!current) return;
-    const tracker = new ScrambleTracker(current.setup);
+    const tracker = new ScrambleTracker(current.setup, current.from);
     trackerRef.current = tracker;
     setProgress(tracker.update(cubeRef.current));
   }, [current]);
+
+  /**
+   * Scrambling for a first block arms itself once your hands stop.
+   *
+   * Waiting for a specific scramble to be applied is what made this mode run
+   * exactly once — the cube does not end solved, so there was nothing to apply
+   * the next one to.
+   */
+  useEffect(() => {
+    if (phase !== 'scrambling') {
+      scrambleTurnsRef.current = 0;
+      return;
+    }
+    const id = setInterval(() => {
+      if (scrambleTurnsRef.current < 6) return;
+      if (performance.now() - lastTurnAtRef.current < 1200) return;
+      analyseNow();
+    }, 300);
+    return () => clearInterval(id);
+  }, [phase, analyseNow]);
 
   // A resync gesture mid-attempt would wipe the attempt
   useEffect(() => {
@@ -206,7 +276,13 @@ export default function TrainingPage() {
       setLast(attempt);
       setHistory((h) => [...h, attempt]);
       setReveal(true);
-      void deal();
+      // First block has no next case to deal — scramble again when you are ready
+      if (mode === 'fb') {
+        scrambleTurnsRef.current = 0;
+        setPhaseBoth('scrambling');
+      } else {
+        void deal();
+      }
     },
     [mode, deal],
   );
@@ -229,6 +305,12 @@ export default function TrainingPage() {
         cubeRef.current = state;
         setCubeState(state);
         const p = phaseRef.current;
+
+        if (p === 'scrambling') {
+          scrambleTurnsRef.current++;
+          lastTurnAtRef.current = performance.now();
+          return;
+        }
 
         if (p === 'setup') {
           const tracker = trackerRef.current;
@@ -323,9 +405,32 @@ export default function TrainingPage() {
         </section>
       )}
 
-      {current && (
+      {problem && (
+        <section className="panel px-4 py-4 sm:px-5">
+          <p className="text-sm text-warn">{problem}</p>
+        </section>
+      )}
+
+      {phase === 'scrambling' && (
+        <section className="panel flex flex-col items-center gap-4 px-4 py-6 sm:px-5">
+          <p className="text-lg font-semibold text-cube-blue">Scramble your cube</p>
+          <p className="max-w-[46ch] text-center text-[13px] text-ink-400">
+            However you like — the app reads whatever position you end up in. It starts as soon as your hands stop.
+          </p>
+          <CubeView
+            state={live.animate ? live.shown : cubeState}
+            animate={live.animate}
+            size={170}
+          />
+          <button className="btn btn-primary !py-1 !text-[13px]" onClick={analyseNow} disabled={dealing}>
+            {dealing ? 'Reading the cube…' : 'Use it now'}
+          </button>
+        </section>
+      )}
+
+      {current && phase !== 'scrambling' && (
         <section className="panel flex flex-col items-center gap-4 px-4 py-5 sm:px-5">
-          {phase === 'setup' && (
+          {phase === 'setup' && current.setup.length > 0 && (
             <div className="w-full">
               <p className="mb-2 text-center text-[13px] text-ink-500">
                 {usingCube ? 'Turn this into your cube' : 'Apply this to your cube'}
