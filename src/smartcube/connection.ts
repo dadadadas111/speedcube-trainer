@@ -8,7 +8,8 @@
 
 import { connectGanCube, cubeTimestampLinearFit, type GanCubeConnection, type GanCubeEvent, type GanCubeMove } from 'gan-web-bluetooth';
 import { SOLVED_STATE, applyMove, fromKociemba, toKociemba, isKnownMove, isPlausibleState, isSolved, cloneState, type CubeState } from '../cube/cube';
-import { MAC_STORAGE_KEY, normalizeMac } from './mac';
+import { normalizeMac, recallMac, rememberMac } from './mac';
+import { readConnectFailure } from './failure';
 import { isFreshSerial } from './serial';
 import { CommandBudget, notifyAll } from './dispatch';
 import { ResetGesture } from './gesture';
@@ -25,6 +26,18 @@ export type CubeLinkStatus = 'disconnected' | 'connecting' | 'connected';
  * everything downstream is none the wiser.
  */
 export type CubeSource = 'bluetooth' | 'remote';
+
+/**
+ * How long to leave the cube alone after the link comes up, and between the
+ * questions that follow. A cube asked three things the instant it connects can
+ * simply drop the link; a quarter of a second each costs nothing and stops it.
+ */
+const HANDSHAKE_SETTLE_MS = 250;
+const HANDSHAKE_GAP_MS = 250;
+/** How long to wait for a dead link to admit it is dead before moving on. */
+const RELEASE_TIMEOUT_MS = 1200;
+
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export interface CubeLogEntry {
   t: number;
@@ -77,6 +90,9 @@ export interface CubeInfo {
 export class CubeLink {
   private conn: GanCubeConnection | null = null;
   private sub: { unsubscribe(): void } | null = null;
+  /** The connection attempt in flight, so a second press joins it rather than
+   *  starting a rival one — or worse, returning as though it had worked. */
+  private pending: Promise<void> | null = null;
   private listeners = new Set<Listener>();
   private state: CubeState = cloneState(SOLVED_STATE);
 
@@ -166,51 +182,121 @@ export class CubeLink {
     this.notify((l) => l.status?.(this.status, this.info));
   }
 
+  /**
+   * Open the link, and stay honest about what state it is in.
+   *
+   * Two things used to go wrong here, and both made connecting feel like a coin
+   * toss. The handshake below is three GATT writes; if any one of them was
+   * refused the whole connection was declared a failure — while the radio link
+   * itself stayed up, subscribed, and held open, so every later attempt fought
+   * a cube this very tab was still holding. And a second press while the
+   * chooser was open used to return as though it had succeeded.
+   */
   async connect(): Promise<void> {
-    if (this.status !== 'disconnected') return;
+    if (this.status === 'connected') return;
+    if (this.pending) return this.pending;
+    this.pending = this.open().finally(() => {
+      this.pending = null;
+    });
+    return this.pending;
+  }
+
+  private async open(): Promise<void> {
     if (!CubeLink.supported) throw new Error('This browser does not support Web Bluetooth. Use Chrome or Edge.');
+    // Anything left over from a failed attempt is holding the cube open, and
+    // the next connection will lose to it.
+    await this.teardown();
     this.status = 'connecting';
     this.droppedUnexpectedly = false;
     this.note('connecting');
     this.emitStatus();
+
+    let conn: GanCubeConnection;
     try {
-      const conn = await connectGanCube(async (device, isFallback) => {
-        const saved = localStorage.getItem(`${MAC_STORAGE_KEY}.${device.name ?? device.id ?? 'cube'}`);
+      conn = await connectGanCube(async (device, isFallback) => {
+        const saved = recallMac(device.name, device.id);
         if (saved) return saved;
         if (!isFallback) return null; // let the library try to detect it first
         const entered = this.askForMac ? await this.askForMac(device.name ?? 'cube') : null;
         const mac = entered ? normalizeMac(entered) : null;
-        if (mac) localStorage.setItem(`${MAC_STORAGE_KEY}.${device.name ?? device.id ?? 'cube'}`, mac);
+        if (mac) rememberMac(mac, device.name, device.id);
         return mac;
       });
-      this.conn = conn;
-      this.info = { name: conn.deviceName, mac: conn.deviceMAC };
-      this.sub = conn.events$.subscribe((e) => this.handle(e));
-      this.status = 'connected';
-      this.source = 'bluetooth';
-      this.budget.refill(performance.now());
-      this.note('connected', `${conn.deviceName} ${conn.deviceMAC}`);
-      this.emitStatus();
-      await conn.sendCubeCommand({ type: 'REQUEST_HARDWARE' });
-      await conn.sendCubeCommand({ type: 'REQUEST_BATTERY' });
-      await conn.sendCubeCommand({ type: 'REQUEST_FACELETS' });
     } catch (err) {
+      const read = readConnectFailure(err);
       this.status = 'disconnected';
-      this.note('connect-failed', (err as Error)?.message ?? String(err));
+      this.note('connect-failed', `${read.kind}: ${(err as Error)?.message ?? String(err)}`);
       this.emitStatus();
       throw err;
     }
+
+    // From here the radio link is up. Nothing below may undo that.
+    this.conn = conn;
+    this.info = { name: conn.deviceName, mac: conn.deviceMAC };
+    this.sub = conn.events$.subscribe((e) => this.handle(e));
+    this.status = 'connected';
+    this.source = 'bluetooth';
+    this.budget.refill(performance.now());
+    this.note('connected', `${conn.deviceName} ${conn.deviceMAC}`);
+    this.emitStatus();
+    void this.handshake(conn);
+  }
+
+  /**
+   * Ask the cube who it is, how full its battery is, and what it is showing.
+   *
+   * Every one of these is a GATT write, and a cube written to several times in
+   * a row can drop the link outright — which is the whole reason CommandBudget
+   * exists, and this path used to sidestep it. They are spaced, they are tried
+   * independently, and not one of them is allowed to fail the connection: a
+   * cube that will not say what hardware it is is still a cube you can solve on.
+   *
+   * The facelets go first because that is the one that matters. The other two
+   * only fill in a label.
+   */
+  private async handshake(conn: GanCubeConnection): Promise<void> {
+    await delay(HANDSHAKE_SETTLE_MS);
+    for (const type of ['REQUEST_FACELETS', 'REQUEST_HARDWARE', 'REQUEST_BATTERY'] as const) {
+      if (this.conn !== conn) return; // superseded, or gone
+      try {
+        await conn.sendCubeCommand({ type });
+      } catch (err) {
+        this.note('handshake-failed', `${type}: ${(err as Error)?.message ?? String(err)}`);
+      }
+      await delay(HANDSHAKE_GAP_MS);
+    }
+  }
+
+  /**
+   * Let go of the cube: drop the subscription and close the radio link.
+   *
+   * Called before every connection attempt as well as on the way out, because
+   * a half-open link from a previous failure is exactly what makes the next
+   * attempt fail too.
+   */
+  private releaseRadio(): Promise<void> {
+    this.sub?.unsubscribe();
+    this.sub = null;
+    const conn = this.conn;
+    this.conn = null;
+    if (!conn) return Promise.resolve();
+    // Waited on before reconnecting, but never waited on for long: a cube that
+    // is already gone can leave disconnect() hanging, and that must not be the
+    // thing that stops you connecting again.
+    return Promise.race([conn.disconnect().catch(() => {}), delay(RELEASE_TIMEOUT_MS)]);
+  }
+
+  private async teardown(): Promise<void> {
+    const done = this.releaseRadio();
+    this.remoteSend = null;
+    this.source = null;
+    await done;
   }
 
   async disconnect(): Promise<void> {
     this.note('disconnect-requested');
     this.droppedUnexpectedly = false;
-    this.sub?.unsubscribe();
-    this.sub = null;
-    await this.conn?.disconnect().catch(() => {});
-    this.conn = null;
-    this.remoteSend = null;
-    this.source = null;
+    await this.teardown();
     this.status = 'disconnected';
     this.info = null;
     this.emitStatus();
@@ -471,9 +557,13 @@ export class CubeLink {
         // in use means the cube or the link gave up.
         this.note('DISCONNECTED BY CUBE');
         this.droppedUnexpectedly = true;
+        // Drop the subscription with it. Left behind, it survives into the
+        // next connection and every move arrives twice. A phone bridging to
+        // this tab keeps its channel: the cube went away, the bridge did not.
+        void this.releaseRadio();
+        if (this.source === 'bluetooth') this.source = null;
         this.status = 'disconnected';
         this.info = null;
-        this.conn = null;
         this.emitStatus();
         break;
     }

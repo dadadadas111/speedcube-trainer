@@ -6,6 +6,8 @@
 
 import { CommandBudget, notifyAll } from './dispatch';
 import { ResetGesture } from './gesture';
+import { macKeysFor } from './mac';
+import { readConnectFailure } from './failure';
 
 let fails = 0;
 const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.log('FAIL ' + n + (x ? '  <' + x + '>' : '')); } else console.log('ok   ' + n); };
@@ -151,6 +153,44 @@ const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.lo
   check('the last release lets go', holds === 0, String(holds));
   b();
   check('and it cannot go negative', holds === 0, String(holds));
+}
+
+
+/* ---- A saved MAC is found however Chrome describes the cube ---- */
+{
+  // The cube was filed under its name; this time the chooser reports no name
+  const named = macKeysFor('GANicR_1234', 'abc123');
+  const nameless = macKeysFor(undefined, 'abc123');
+  check('a named cube is filed under both name and id', named.length === 2);
+  check(
+    'a nameless cube still shares a key with the named one',
+    nameless.some((k) => named.includes(k)),
+    JSON.stringify({ named, nameless }),
+  );
+  check('a cube with nothing to go on still gets a key', macKeysFor(null, null).length === 1);
+  check('the same cube twice yields no duplicate keys', macKeysFor('x', 'x').length === 1);
+}
+
+/* ---- Failures are named, not quoted back ---- */
+{
+  const cases: [string, string, string][] = [
+    ['NotFoundError', 'User cancelled the requestDevice() chooser.', 'cancelled'],
+    ['NetworkError', 'Connection Error: Connection attempt failed.', 'asleep'],
+    ['NetworkError', 'GATT Server is disconnected. Cannot perform GATT operations.', 'dropped'],
+    ['Error', 'Unable to determine cube MAC address, connection is not possible!', 'no-mac'],
+    ['InvalidStateError', 'GATT operation already in progress.', 'busy'],
+    ['Error', "Can't find target BLE services - wrong or unsupported cube device model", 'unsupported'],
+  ];
+  for (const [name, message, want] of cases) {
+    const err = Object.assign(new Error(message), { name });
+    const read = readConnectFailure(err);
+    check('reads ' + want + ': ' + message.slice(0, 34), read.kind === want, read.kind);
+  }
+  // Every failure but a dismissed chooser has to leave something on screen
+  const asleep = readConnectFailure(Object.assign(new Error('Connection Error'), { name: 'NetworkError' }));
+  check('an unreachable cube says what to do', /turn/i.test(asleep.message), asleep.message);
+  check('a dismissed chooser says nothing', readConnectFailure(Object.assign(new Error('User cancelled'), { name: 'NotFoundError' })).message === '');
+  check('an unrecognised error still reports itself', readConnectFailure(new Error('weird thing')).message === 'weird thing');
 }
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

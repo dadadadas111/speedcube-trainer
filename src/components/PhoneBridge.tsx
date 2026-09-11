@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { useApp } from '../store/app';
 import { cubeLink } from '../smartcube/connection';
+import { readConnectFailure } from '../smartcube/failure';
 import { CODE_LENGTH, normalizeCode } from '../remote/protocol';
 import { bridgeToCode, hostPhone, stopRemote, useRelayStatus, useRemoteRole } from '../remote/session';
 
@@ -103,6 +104,18 @@ function CodeEntry({ value, onChange }: { value: string; onChange: (v: string) =
 
 /** What the phone shows while it is doing the bridging. */
 function BridgeStatus() {
+  // The phone is the only thing holding the cube, so a failure here has to be
+  // visible on the phone. It used to vanish into an unhandled rejection.
+  const [cubeError, setCubeError] = useState<string | null>(null);
+  const connectCube = async () => {
+    setCubeError(null);
+    try {
+      await cubeLink.connect();
+    } catch (e) {
+      const read = readConnectFailure(e);
+      if (read.kind !== 'cancelled') setCubeError(read.message);
+    }
+  };
   const { status, error } = useRelayStatus();
   const canBluetooth = typeof navigator !== 'undefined' && 'bluetooth' in navigator;
   const { cubeStatus, cubeInfo } = useApp();
@@ -125,7 +138,7 @@ function BridgeStatus() {
       </div>
       {!connected &&
         (canBluetooth ? (
-          <button className="btn btn-primary !py-1 !text-[13px] self-start" onClick={() => void cubeLink.connect()}>
+          <button className="btn btn-primary !py-1 !text-[13px] self-start" onClick={() => void connectCube()}>
             Connect the cube
           </button>
         ) : (
@@ -133,6 +146,7 @@ function BridgeStatus() {
             This browser has no Web Bluetooth, so it cannot hold the cube. Use Chrome on Android.
           </p>
         ))}
+      {cubeError && <p className="max-w-[46ch] text-[13px] text-bad">{cubeError}</p>}
       <p className="max-w-[46ch] text-[12px] text-ink-500">
         Leave this page open. The screen is kept awake while bridging.
       </p>

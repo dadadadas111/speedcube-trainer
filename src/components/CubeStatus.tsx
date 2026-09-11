@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/app';
 import { cubeLink } from '../smartcube/connection';
+import { readConnectFailure } from '../smartcube/failure';
 import MacPrompt from './MacPrompt';
 import CubeSync from './CubeSync';
 import PhoneBridge from './PhoneBridge';
@@ -61,13 +62,11 @@ export default function CubeStatus() {
     try {
       await cubeLink.connect();
     } catch (e) {
-      const msg = (e as Error).message ?? String(e);
-      if (/cancel|User cancelled/i.test(msg)) return;
-      setError(
-        /MAC address/i.test(msg)
-          ? 'Without a MAC address the cube data cannot be decrypted.'
-          : msg,
-      );
+      // A dismissed chooser is not a failure, and "NetworkError" tells the
+      // person holding the cube nothing: name the cause instead.
+      const read = readConnectFailure(e);
+      if (read.kind === 'cancelled') return;
+      setError(read.message);
     }
   };
 
