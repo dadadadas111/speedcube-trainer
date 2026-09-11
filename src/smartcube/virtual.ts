@@ -32,11 +32,32 @@ export const KEYMAP_HELP: [string, string][] = [
 type Listener = {
   move?: (m: LiveMove, state: CubeState) => void;
   state?: (s: CubeState, fromCube: boolean) => void;
+  /** The keyboard cube was switched on or off */
+  active?: (on: boolean) => void;
 };
 
 class VirtualCube {
   private state: CubeState = cloneState(SOLVED_STATE);
   private listeners = new Set<Listener>();
+  /** True while keys are driving this cube */
+  active = false;
+
+  /**
+   * Switched on or off. Worth announcing: a phone bridging to a computer has
+   * to tell it something appeared on this end, and the keyboard cube has no
+   * connect step of its own to hang that on.
+   */
+  setActive(on: boolean) {
+    if (this.active === on) return;
+    this.active = on;
+    for (const l of [...this.listeners]) {
+      try {
+        l.active?.(on);
+      } catch {
+        /* a listener must not break the others */
+      }
+    }
+  }
 
   on(l: Listener): () => void {
     this.listeners.add(l);

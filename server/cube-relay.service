@@ -1,0 +1,29 @@
+[Unit]
+Description=Speedcube trainer phone-to-computer relay
+After=network.target
+
+[Service]
+Type=simple
+User=cuberelay
+Group=cuberelay
+WorkingDirectory=/opt/cube-relay
+Environment=RELAY_HOST=127.0.0.1
+Environment=RELAY_PORT=8787
+ExecStart=/opt/cube-relay/venv/bin/python /opt/cube-relay/relay.py
+Restart=always
+RestartSec=3
+
+# It only ever needs its own directory and a loopback port
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

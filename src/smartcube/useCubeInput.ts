@@ -32,6 +32,9 @@ export function useCubeInput(handlers: CubeInputHandlers, keyboard: boolean) {
   }, [keyboard]);
 
   useEffect(() => {
+    // Recorded on the cube itself so other parts of the app — the phone bridge,
+    // for one — can tell whether keys are currently driving it.
+    virtualCube.setActive(keyboard);
     if (!keyboard) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;

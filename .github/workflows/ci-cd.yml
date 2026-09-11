@@ -30,6 +30,18 @@ jobs:
       - name: Core tests (cube engine, Roux step detection, drill)
         run: npm test
 
+      # The relay is deployed by hand (see server/README.md), so CI is the only
+      # thing keeping it honest.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Relay tests
+        run: |
+          python -m venv server/venv
+          server/venv/bin/pip -q install websockets
+          server/venv/bin/python server/__relaytest.py
+
       - name: Build
         run: npm run build
 

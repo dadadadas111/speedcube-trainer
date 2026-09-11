@@ -16,6 +16,15 @@ export { normalizeMac, savedMacs, forgetMac } from './mac';
 
 export type CubeLinkStatus = 'disconnected' | 'connecting' | 'connected';
 
+/**
+ * Where the cube events are coming from.
+ *
+ * 'bluetooth' is this machine's own radio. 'remote' is a phone in the same room
+ * holding the cube and forwarding what it sees — the events are identical, so
+ * everything downstream is none the wiser.
+ */
+export type CubeSource = 'bluetooth' | 'remote';
+
 export interface CubeLogEntry {
   t: number;
   kind: string;
@@ -40,6 +49,11 @@ export interface LiveMove {
 
 type Listener = {
   move?: (m: LiveMove, state: CubeState) => void;
+  /**
+   * Every event exactly as the cube reported it, before any interpretation.
+   * Used by a phone bridging to a computer, which forwards them untouched.
+   */
+  raw?: (e: GanCubeEvent) => void;
   /** The data read back is garbage — almost certainly a wrong MAC address */
   garbled?: () => void;
   state?: (s: CubeState, fromCube: boolean) => void;
@@ -77,6 +91,10 @@ export class CubeLink {
   askForMac: ((deviceName: string) => Promise<string | null>) | null = null;
   /** True when the link dropped on its own rather than being closed here */
   droppedUnexpectedly = false;
+  /** Which radio the events are arriving through, if any */
+  source: CubeSource | null = null;
+  /** Set while a phone is bridging: where its commands are sent */
+  private remoteSend: ((type: string) => void) | null = null;
   /** Recent events, for working out what happened when something goes wrong */
   readonly log: CubeLogEntry[] = [];
   /**
@@ -142,6 +160,7 @@ export class CubeLink {
       this.info = { name: conn.deviceName, mac: conn.deviceMAC };
       this.sub = conn.events$.subscribe((e) => this.handle(e));
       this.status = 'connected';
+      this.source = 'bluetooth';
       this.budget.refill(performance.now());
       this.note('connected', `${conn.deviceName} ${conn.deviceMAC}`);
       this.emitStatus();
@@ -163,9 +182,65 @@ export class CubeLink {
     this.sub = null;
     await this.conn?.disconnect().catch(() => {});
     this.conn = null;
+    this.remoteSend = null;
+    this.source = null;
     this.status = 'disconnected';
     this.info = null;
     this.emitStatus();
+  }
+
+  /* ---------------- a phone acting as the radio ---------------- */
+
+  /**
+   * Take over the link with a phone on the other end.
+   *
+   * `send` is how a command reaches the cube from here: it goes to the phone,
+   * which passes it on. Nothing else changes — the events that come back are
+   * the cube's own, so the rest of the app cannot tell the difference.
+   */
+  attachRemote(send: (type: string) => void) {
+    this.remoteSend = send;
+    this.source = 'remote';
+    this.droppedUnexpectedly = false;
+    this.note('remote-attached');
+  }
+
+  /** The phone says its cube connected, changed, or went away. */
+  setRemoteCube(info: CubeInfo | null) {
+    if (this.source !== 'remote') return;
+    this.info = info;
+    this.status = info ? 'connected' : 'connecting';
+    this.budget.refill(performance.now());
+    this.note(info ? 'remote-cube' : 'remote-cube-gone', info ? `${info.name} ${info.mac}` : undefined);
+    this.emitStatus();
+  }
+
+  /** An event forwarded from the phone, handled exactly like a local one. */
+  acceptRemoteEvent(e: GanCubeEvent) {
+    if (this.source !== 'remote') return;
+    this.handle(e);
+  }
+
+  /** Give the link back; the phone has stopped bridging. */
+  detachRemote() {
+    if (this.source !== 'remote') return;
+    this.remoteSend = null;
+    this.source = null;
+    this.status = 'disconnected';
+    this.info = null;
+    this.note('remote-detached');
+    this.emitStatus();
+  }
+
+  /** Send a command to the cube, wherever it happens to be. */
+  private async command(type: 'REQUEST_FACELETS' | 'REQUEST_RESET' | 'REQUEST_BATTERY' | 'REQUEST_HARDWARE') {
+    if (this.source === 'remote') {
+      this.remoteSend?.(type);
+      return;
+    }
+    await this.conn?.sendCubeCommand({ type }).catch((err) => {
+      this.note('command-failed', (err as Error)?.message ?? String(err));
+    });
   }
 
   /**
@@ -177,9 +252,7 @@ export class CubeLink {
     this.lastSerial = null;
     this.budget.spendFreely(performance.now());
     this.note('resync');
-    await this.conn?.sendCubeCommand({ type: 'REQUEST_FACELETS' }).catch((err) => {
-      this.note('command-failed', (err as Error)?.message ?? String(err));
-    });
+    await this.command('REQUEST_FACELETS');
   }
 
   /**
@@ -191,11 +264,10 @@ export class CubeLink {
    * on the next move.
    */
   async pollState(): Promise<void> {
-    if (!this.conn || this.status !== 'connected') return;
+    if (this.status !== 'connected') return;
+    if (!this.conn && this.source !== 'remote') return;
     if (!this.budget.take(performance.now())) return;
-    await this.conn.sendCubeCommand({ type: 'REQUEST_FACELETS' }).catch((err) => {
-      this.note('command-failed', (err as Error)?.message ?? String(err));
-    });
+    await this.command('REQUEST_FACELETS');
   }
 
   /** Wait for the next state packet from the cube, or time out. */
@@ -234,6 +306,18 @@ export class CubeLink {
    * @returns true if the cube confirms it is solved
    */
   async resetToSolved(): Promise<boolean> {
+    if (this.source === 'remote') {
+      this.note('reset');
+      this.budget.spendFreely(performance.now());
+      this.lastSerial = null;
+      const pending = this.nextState();
+      this.remoteSend?.('REQUEST_RESET');
+      this.remoteSend?.('REQUEST_FACELETS');
+      const confirmed = await pending;
+      if (confirmed) return isSolved(confirmed);
+      this.setState(cloneState(SOLVED_STATE), true);
+      return true;
+    }
     if (!this.conn) {
       this.lastSerial = null;
       this.setState(cloneState(SOLVED_STATE), true);
@@ -258,6 +342,7 @@ export class CubeLink {
   }
 
   private handle(e: GanCubeEvent) {
+    this.notify((l) => l.raw?.(e));
     switch (e.type) {
       case 'MOVE': {
         this.lastSerial = e.serial;

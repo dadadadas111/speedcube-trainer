@@ -3,6 +3,16 @@ import { useApp } from '../store/app';
 import { cubeLink } from '../smartcube/connection';
 import MacPrompt from './MacPrompt';
 import CubeSync from './CubeSync';
+import PhoneBridge from './PhoneBridge';
+import { useRemoteRole } from '../remote/session';
+
+/**
+ * Dropdown geometry. On a phone the panel spans the screen with a margin rather
+ * than hanging off the button — anchored to a button near the right edge, a
+ * panel this wide ends up half off the screen.
+ */
+const PANEL =
+  'panel fixed inset-x-2 top-16 z-50 p-4 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[26rem]';
 
 export default function CubeStatus() {
   const { cubeStatus, cubeInfo, settings } = useApp();
@@ -10,6 +20,8 @@ export default function CubeStatus() {
   const [garbled, setGarbled] = useState(false);
   const [macAsk, setMacAsk] = useState<{ deviceName: string; resolve: (mac: string | null) => void } | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [bridgeOpen, setBridgeOpen] = useState(false);
+  const remoteRole = useRemoteRole();
   const asked = useRef(false);
 
   // The library calls this when it cannot read the MAC itself. It returns a
@@ -82,7 +94,7 @@ export default function CubeStatus() {
             {syncOpen && (
               // Living in the top bar means it is reachable from anywhere in the
               // app, not only from the timer page.
-              <div className="panel absolute right-0 z-50 mt-2 w-[min(92vw,26rem)] p-4">
+              <div className={PANEL}>
                 <div className="mb-2 flex items-baseline justify-between">
                   <h3 className="text-sm font-semibold">Sync with the real cube</h3>
                   <button className="btn btn-ghost !px-1.5 !py-0 !text-[13px]" onClick={() => setSyncOpen(false)}>
@@ -103,6 +115,28 @@ export default function CubeStatus() {
           {cubeStatus === 'connecting' ? 'Connecting…' : dropped ? 'Cube dropped — reconnect' : 'Connect smart cube'}
         </button>
       )}
+
+      {/* A phone with bluetooth can hold the cube for a machine without it */}
+      <div className="relative">
+        <button
+          className={`btn btn-ghost !px-2 !py-1 !text-[13px] ${remoteRole ? '!text-cube-blue' : ''}`}
+          onClick={() => setBridgeOpen((v) => !v)}
+          aria-expanded={bridgeOpen}
+        >
+          {remoteRole === 'bridge' ? 'Bridging' : remoteRole === 'host' ? 'Phone' : 'Use a phone'}
+        </button>
+        {bridgeOpen && (
+          <div className={PANEL}>
+            <div className="mb-2 flex items-baseline justify-between">
+              <h3 className="text-sm font-semibold">Phone as the cube's radio</h3>
+              <button className="btn btn-ghost !px-1.5 !py-0 !text-[13px]" onClick={() => setBridgeOpen(false)}>
+                Close
+              </button>
+            </div>
+            <PhoneBridge />
+          </div>
+        )}
+      </div>
 
       {garbled && (
         <span className="max-w-[34ch] text-[12px] text-bad">

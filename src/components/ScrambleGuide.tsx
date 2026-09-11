@@ -46,6 +46,8 @@ export default function ScrambleGuide({ moves, progress }: Props) {
               </>
             )}
             <span
+              data-move={m}
+              data-state={isNext ? (partial ? 'partial' : 'next') : isDone ? 'done' : 'todo'}
               className={CHIP}
               style={{
                 background: isNext ? (partial ? 'var(--color-warn)' : 'var(--color-cube-blue)') : 'transparent',

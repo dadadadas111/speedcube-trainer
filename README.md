@@ -196,6 +196,42 @@ the link was closed by the app or given up by the cube. That last distinction
 matters: nothing in the app can close the link on its own, so a drop that shows
 as `DISCONNECTED BY CUBE` came from the radio, not from here.
 
+## A phone as the cube's radio
+
+A computer with no bluetooth adapter can still use the smart cube: the phone
+holds the cube, the computer shows everything.
+
+1. On the computer, **Use a phone** in the top bar → *Show a code for my phone*.
+   A six-character code appears.
+2. On the phone, open the same site → **Use a phone** → *This phone has the
+   cube* → type the code → *Connect the cube*.
+3. Leave the phone's page open. It keeps its screen awake while bridging.
+
+From then on the computer behaves as if the cube were its own: the timer, the
+scramble guide, the replay, the sync buttons. That is not a coincidence — the
+phone forwards the cube's events untouched and the computer feeds them into the
+same handler a local cube uses, so nothing downstream knows the difference.
+Commands travel the other way, which is why *Sync* and *Cube is solved* still
+work from the computer.
+
+The keyboard cube goes across the bridge too, so the whole path can be tried
+without a cube in the room.
+
+**What the relay in the middle is:** about two hundred lines of Python on the
+same VPS, listening on loopback with nginx proxying `/relay` to it. It hands out
+room codes, pairs two sockets, and copies messages between them without looking
+inside. It writes nothing to disk and forgets a room once both sides leave.
+Codes come from a 31-character alphabet with every easily-misread character left
+out, are handed out by the server rather than chosen by clients, and a room
+takes exactly two sockets. What flows through is cube moves — but anyone who
+guessed a live code mid-session could watch them, so a code is good for one
+session and no longer.
+
+It is **deployed by hand**, not by CI: the deploy key is deliberately restricted
+to writing into the web directory and nothing else. See
+[server/README.md](server/README.md). CI runs the relay's tests on every push,
+which is the only thing keeping it honest.
+
 ## Cube display
 
 The default is a **3D cube** you can drag to rotate (or use the arrow keys),
@@ -301,7 +337,8 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 328 assertions, runs in a few seconds
+npm test            # 342 assertions, runs in a few seconds
+npm run test:relay  # the relay, driven through a real socket (needs server/venv)
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```
 
