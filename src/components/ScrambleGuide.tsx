@@ -4,6 +4,12 @@
  * When a turn goes wrong your eyes are already on the scramble, so that is
  * where the fix belongs — spliced in at the point you went off, in red. Putting
  * it in a panel somewhere below means looking away to find out what happened.
+ *
+ * Mid-turn is different, and gets colour and nothing else. Being halfway
+ * through a half turn is what scrambling correctly looks like, so adding
+ * anything there would shove the rest of the scramble sideways on every other
+ * move — and text that jumps around under your eyes while you are reading it is
+ * worse than no text at all. Amber says keep going; that is the whole message.
  */
 
 import type { ScrambleProgress } from '../analysis/scrambleGuide';
@@ -62,10 +68,6 @@ export default function ScrambleGuide({ moves, progress }: Props) {
             >
               {m}
             </span>
-            {/* Mid-turn: say what is still missing, right next to the move */}
-            {here && partial && progress?.remaining && (
-              <span className="text-[0.7em] text-warn">+{progress.remaining}</span>
-            )}
           </span>
         );
       })}

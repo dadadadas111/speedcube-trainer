@@ -13,7 +13,7 @@ import { SOLVED_STATE, applyMoves, isSolved, stateSequence } from '../cube/cube'
 import { parseAlg } from '../cube/alg';
 import { cleanMoveStream } from '../cube/moveStream';
 import { detectStages, scanStages, ROUX_STAGES } from './method';
-import { analyzeSolve } from './solve';
+import { analyzeSolve, stepOfPause } from './solve';
 import { REAL_SOLVE, REAL_SOLVE_2, REAL_SOLVE_3, realSolveMoves, parseMoves } from './fixtures/realSolve';
 
 let fails = 0;
@@ -116,6 +116,41 @@ for (const [name, solve] of [['solve 2', REAL_SOLVE_2], ['solve 3', REAL_SOLVE_3
     if (got.join(',') !== want.join(',')) { ok = false; console.log(`   ${rot}: ${got.join(',')} vs ${want.join(',')}`); }
   }
   check('solve 1: same boundaries whichever way the cube is held', ok, want.join(','));
+}
+
+/**
+ * Where a pause is counted.
+ *
+ * A step runs from the previous step's last turn to its own, so the gap before
+ * its first move is inside its duration — and therefore has to be inside its
+ * pauses too. Counting to endIndex instead of endIndex - 1 used to hand each
+ * step the NEXT one's thinking time and drop its own, so the ribbon and the
+ * sentence under it pointed at different steps.
+ */
+for (const [name, solve] of [['solve 1', REAL_SOLVE], ['solve 2', REAL_SOLVE_2], ['solve 3', REAL_SOLVE_3]] as const) {
+  const a = analyzeSolve(parseAlg(solve.scramble), cleanMoveStream(parseMoves(solve.moves)), solve.timeMs, { method: 'roux' });
+
+  check(`${name}: the wait before a step is inside it, not on top of it`,
+    a.steps.every((s) => s.leadMs <= s.durationMs + 1),
+    a.steps.map((s) => `${s.key} ${Math.round(s.leadMs)}/${Math.round(s.durationMs)}`).join(' '));
+
+  check(`${name}: the first step waits for nobody`, a.steps[0].leadMs === 0, String(a.steps[0].leadMs));
+
+  // Every pause lands in the step whose ribbon segment covers it
+  const strays = a.steps.flatMap((s) =>
+    s.pauses.filter((p) => stepOfPause(a.steps, p.moveIndex)?.key !== s.key).map((p) => `${s.key}@${p.moveIndex}`),
+  );
+  check(`${name}: every pause belongs to the step that shows it`, strays.length === 0, strays.join(' '));
+
+  // A long wait before a step must be findable as that step's pause
+  for (const s of a.steps) {
+    if (s.leadMs <= a.pauseThresholdMs) continue;
+    const has = s.pauses.some((p) => Math.abs(p.ms - s.leadMs) < 1);
+    check(`${name}: ${s.key}'s ${Math.round(s.leadMs)}ms wait is counted against it`, has);
+  }
+
+  check(`${name}: step pause totals add up to the solve's`,
+    Math.abs(a.steps.reduce((n, s) => n + s.pauseMs, 0) - a.pauseMs) < 1);
 }
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

@@ -21,6 +21,12 @@ export interface StepAnalysis {
   durationMs: number;
   moveCount: number;
   tps: number;
+  /**
+   * Time from the previous step's last turn to this step's first one — the
+   * pause spent working out what to do, before any of it got done. It is part
+   * of durationMs, not on top of it.
+   */
+  leadMs: number;
   pauses: PauseInfo[];
   pauseMs: number;
   /** Orientation detected at the end of the step, used for rendering */
@@ -62,6 +68,17 @@ export interface AnalyzeOptions {
   pauseFactor?: number;
 }
 
+/**
+ * The step a pause belongs to.
+ *
+ * A pause is recorded against the move it came BEFORE, and a step owns the gap
+ * before its own first turn, so the range runs from startIndex up to (not
+ * including) endIndex. A step with no moves owns nothing.
+ */
+export function stepOfPause(steps: StepAnalysis[], moveIndex: number): StepAnalysis | undefined {
+  return steps.find((s) => moveIndex >= s.startIndex && moveIndex < s.endIndex);
+}
+
 function median(xs: number[]): number {
   if (!xs.length) return 0;
   const a = [...xs].sort((x, y) => x - y);
@@ -96,8 +113,18 @@ export function analyzeSolve(
     const detected = d.endIndex >= 0;
     const endIndex = detected ? d.endIndex : cursor;
     const endMs = endIndex === 0 ? 0 : (moves[endIndex - 1]?.t ?? cursorMs);
+    /**
+     * The gap before this step's first turn belongs to THIS step, not the one
+     * before it: the duration already counts it, since a step runs from the
+     * previous step's last move to its own last move. Walking to endIndex
+     * instead of endIndex - 1 used to hand each step the next one's thinking
+     * time and drop its own, which left the pause figures a step out of line
+     * with the durations beside them.
+     */
+    const leadMs = endIndex > cursor && cursor > 0 ? (deltas[cursor] ?? 0) : 0;
     const pauses: PauseInfo[] = [];
-    for (let i = cursor + 1; i <= endIndex; i++) {
+    if (leadMs > threshold) pauses.push({ moveIndex: cursor, ms: leadMs });
+    for (let i = cursor + 1; i < endIndex; i++) {
       if (deltas[i] > threshold) pauses.push({ moveIndex: i, ms: deltas[i] });
     }
     const durationMs = Math.max(0, endMs - cursorMs);
@@ -113,6 +140,7 @@ export function analyzeSolve(
       durationMs,
       moveCount,
       tps: durationMs > 0 ? (moveCount / durationMs) * 1000 : 0,
+      leadMs,
       pauses,
       pauseMs: pauses.reduce((a, p) => a + p.ms, 0),
       rotation: d.rotation,

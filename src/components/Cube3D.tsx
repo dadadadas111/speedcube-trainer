@@ -4,11 +4,18 @@
  * The position and normal of all 54 stickers come straight from the coordinate
  * model in cube/geometry.ts, the same source of truth the solver engine uses.
  * The CSS Y axis points down, so every model-to-CSS conversion flips Y.
+ *
+ * It is built out of 26 little boxes rather than a block with stickers stuck to
+ * it. That matters only when a layer turns: turn a box and the black plastic
+ * goes round with the colour, and the inside of the cube shows in the gap, the
+ * way it does in your hands. Rotating stickers over a body that stays put —
+ * which is what this used to do — reads as stickers peeling off.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyPerm, type CubeState } from '../cube/cube';
-import { FACELET_NORMAL, FACELET_POS, moveTurn } from '../cube/geometry';
+import { FACELET_NORMAL, cubieOf, moveTurn, type Vec3 } from '../cube/geometry';
+import { moveInFrame } from '../cube/alg';
 import { FACE_COLORS } from './palette';
 
 export interface Quaternion {
@@ -100,15 +107,45 @@ function faceRotation(n: readonly number[]): string {
   return 'rotateY(180deg)';                  // B
 }
 
-/** Six black body faces, so you cannot see through the gaps between stickers. */
-const BODY_FACES = [
+const NORMALS: Vec3[] = [
   [0, 1, 0],
   [0, -1, 0],
   [1, 0, 0],
   [-1, 0, 0],
   [0, 0, 1],
   [0, 0, -1],
-] as const;
+];
+
+/**
+ * The 26 boxes and, for each of their six sides, the sticker on it — or none,
+ * for a side that faces into the middle of the cube. Built once from the same
+ * coordinate model the engine uses, so it cannot drift out of step with it.
+ */
+const CUBIES: { pos: Vec3; faces: { normal: Vec3; facelet: number | null }[] }[] = (() => {
+  const byKey = new Map<string, number>();
+  for (let i = 0; i < 54; i++) {
+    const c = cubieOf(i);
+    const n = FACELET_NORMAL[i];
+    byKey.set(`${c[0]},${c[1]},${c[2]}|${n[0]},${n[1]},${n[2]}`, i);
+  }
+  const out: { pos: Vec3; faces: { normal: Vec3; facelet: number | null }[] }[] = [];
+  for (let x = -1; x <= 1; x++) {
+    for (let y = -1; y <= 1; y++) {
+      for (let z = -1; z <= 1; z++) {
+        if (x === 0 && y === 0 && z === 0) continue; // nobody ever sees the middle
+        const pos: Vec3 = [x, y, z];
+        out.push({
+          pos,
+          faces: NORMALS.map((normal) => ({
+            normal,
+            facelet: byKey.get(`${x},${y},${z}|${normal[0]},${normal[1]},${normal[2]}`) ?? null,
+          })),
+        });
+      }
+    }
+  }
+  return out;
+})();
 
 /**
  * The cube's quaternion -> a CSS matrix.
@@ -167,7 +204,15 @@ export default function Cube3D({
   const [view, setView] = useState(DEFAULT_VIEW);
   const drag = useRef<{ x: number; y: number; rx: number; ry: number } | null>(null);
 
-  const turn = useMemo(() => (animate ? moveTurn(animate.move) : null), [animate]);
+  /**
+   * The move has to be read in the frame the cube is shown in. `shown` is the
+   * state viewed through `viewRotation`, so a move named in the raw frame would
+   * spin a different layer than the one that actually moved.
+   */
+  const turn = useMemo(() => {
+    if (!animate) return null;
+    return moveTurn(viewRotation ? moveInFrame(animate.move, viewRotation) : animate.move);
+  }, [animate, viewRotation]);
   const layerDeg = turn && animate ? turn.quarters * 90 * easeTurn(animate.progress) * CSS_SIGN[turn.axis] : 0;
   const layerTransform = turn ? `${CSS_AXIS[turn.axis]}(${layerDeg}deg) ` : '';
 
@@ -209,8 +254,6 @@ export default function Cube3D({
   };
 
   const unit = size / 5;
-  const sticker = unit * 0.9;
-  const body = unit * 3;
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -282,45 +325,55 @@ export default function Cube3D({
           cursor: interactive && !quaternion ? 'grab' : 'default',
         }}
       >
-        {BODY_FACES.map((n, i) => (
-          <div
-            key={`body-${i}`}
-            style={{
-              position: 'absolute',
-              width: body,
-              height: body,
-              marginLeft: -body / 2,
-              marginTop: -body / 2,
-              background: '#080a0e',
-              borderRadius: unit * 0.14,
-              transform: `translate3d(${n[0] * unit * 1.5}px, ${-n[1] * unit * 1.5}px, ${n[2] * unit * 1.5}px) ${faceRotation(n)}`,
-            }}
-          />
-        ))}
-        {FACELET_POS.map((p, i) => {
-          const n = FACELET_NORMAL[i];
-          const dim = hl ? !hl.has(i) : false;
-          const inLayer = turn?.inLayer(i) ?? false;
-          // push out slightly so stickers do not z-fight with the body faces
-          const out = 0.02;
+        {CUBIES.map((cubie) => {
+          const [x, y, z] = cubie.pos;
+          // A box turns as one piece: the transform goes on the box, not on the
+          // colours stuck to it.
+          const inLayer = cubie.faces.some((f) => f.facelet !== null && (turn?.inLayer(f.facelet) ?? false));
           return (
             <div
-              key={i}
+              key={`${x}${y}${z}`}
               style={{
                 position: 'absolute',
-                width: sticker,
-                height: sticker,
-                marginLeft: -sticker / 2,
-                marginTop: -sticker / 2,
-                background: shade(FACE_COLORS[shown[i]], brightness(n, inLayer)),
-                opacity: dim ? 0.3 : 1,
-                borderRadius: unit * 0.16,
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,.22), inset 0 0 0 1px rgba(0,0,0,.35)',
-                // The layer rotation goes FIRST so it acts in the whole cube's
-                // frame, exactly like a layer turning about its own axis.
-                transform: `${inLayer ? layerTransform : ''}translate3d(${(p[0] + n[0] * out) * unit}px, ${-(p[1] + n[1] * out) * unit}px, ${(p[2] + n[2] * out) * unit}px) ${faceRotation(n)}`,
+                transformStyle: 'preserve-3d',
+                transform: `${inLayer ? layerTransform : ''}translate3d(${x * unit}px, ${-y * unit}px, ${z * unit}px)`,
               }}
-            />
+            >
+              {cubie.faces.map((face, k) => {
+                const n = face.normal;
+                const lit = face.facelet !== null;
+                const dim = lit && hl ? !hl.has(face.facelet!) : false;
+                return (
+                  <div
+                    key={k}
+                    style={{
+                      position: 'absolute',
+                      width: unit,
+                      height: unit,
+                      marginLeft: -unit / 2,
+                      marginTop: -unit / 2,
+                      background: '#0a0c11',
+                      borderRadius: unit * 0.16,
+                      backfaceVisibility: 'hidden',
+                      transform: `translate3d(${(n[0] * unit) / 2}px, ${(-n[1] * unit) / 2}px, ${(n[2] * unit) / 2}px) ${faceRotation(n)}`,
+                    }}
+                  >
+                    {lit && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          inset: unit * 0.07,
+                          background: shade(FACE_COLORS[shown[face.facelet!]], brightness(n, inLayer)),
+                          opacity: dim ? 0.25 : 1,
+                          borderRadius: unit * 0.13,
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,.22), inset 0 0 0 1px rgba(0,0,0,.35)',
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           );
         })}
       </div>

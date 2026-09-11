@@ -1,6 +1,6 @@
 /** The review panel shown right after each solve. */
 
-import type { SolveAnalysis } from '../analysis/solve';
+import { stepOfPause, type SolveAnalysis } from '../analysis/solve';
 import { REFERENCE } from '../analysis/recommend';
 import { formatSeconds } from '../analysis/stats';
 import StepRibbon from './StepRibbon';
@@ -18,7 +18,7 @@ function verdict(a: SolveAnalysis): { text: string; tone: 'good' | 'warn' | 'bad
 
   const longest = a.longestPause;
   if (longest && longest.ms > 1200) {
-    const step = a.steps.find((s) => longest.moveIndex > s.startIndex && longest.moveIndex <= s.endIndex);
+    const step = stepOfPause(a.steps, longest.moveIndex);
     return {
       text: `Stuck for ${formatSeconds(longest.ms)}s during ${step?.label ?? 'the solve'} — the longest pause this time.`,
       tone: 'bad',

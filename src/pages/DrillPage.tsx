@@ -98,14 +98,18 @@ export default function DrillPage() {
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <AlgLibrary
-        algs={algs}
-        repCounts={repCounts}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onAdd={() => setAdding(true)}
-      />
+    // Random drilling picks its cases from the family chips, so the library is
+    // just something to scroll past — it only appears when it is being used.
+    <div className={mode === 'one' ? 'grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]' : 'flex flex-col gap-5'}>
+      {mode === 'one' && (
+        <AlgLibrary
+          algs={algs}
+          repCounts={repCounts}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onAdd={() => setAdding(true)}
+        />
+      )}
 
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-2">

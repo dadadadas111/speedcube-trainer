@@ -11,6 +11,7 @@ import { ScrambleTracker, isAtStart, type ScrambleProgress } from '../analysis/s
 import { analyzeSolveRecord } from '../analysis/pipeline';
 import { averageOf, effectiveTime, formatTime } from '../analysis/stats';
 import CubeView from '../components/CubeView';
+import { useTurnAnimation } from '../components/useTurnAnimation';
 import ScrambleGuide from '../components/ScrambleGuide';
 import CubeSync from '../components/CubeSync';
 import PostSolve from '../components/PostSolve';
@@ -48,6 +49,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const holdRef = useRef<number | null>(null);
 
   const quaternion = useCubeGyro(settings.useGyro && cubeStatus === 'connected');
+  // The cube on screen turns its layer instead of jumping to the next position
+  const live = useTurnAnimation();
 
   const setPhaseBoth = useCallback((p: Phase) => {
     phaseRef.current = p;
@@ -133,9 +136,12 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   /* ---------- input from the cube ---------- */
   useCubeInput(
     {
-      onState: (s) => {
+      onState: (s, fromCube) => {
         cubeStateRef.current = s;
         setCubeState(s);
+        // A MOVE is followed by its own state event; letting that through would
+        // cancel the turn before a single frame of it had been drawn.
+        if (fromCube) live.jump(s);
         // The state can change without any move (the cube re-sends facelets
         // after a sync) — refresh the progress to match.
         if (phaseRef.current === 'scrambling' && trackerRef.current) {
@@ -149,6 +155,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         }
       },
       onMove: (m, state) => {
+        live.turn(m.move, state);
         const p = phaseRef.current;
 
         if (p === 'scrambling') {
@@ -347,7 +354,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         {usingCube && (
           // The on-screen cube follows the real one during the solve — which is
           // also how a dropped bluetooth move shows up, as the two diverge.
-          <CubeView state={cubeState} size={150} quaternion={quaternion} interactive={false} />
+          <CubeView state={live.shown} animate={live.animate} size={150} quaternion={quaternion} interactive={false} />
         )}
         {stuck ? (
           <button className="btn btn-danger pop-in" onClick={() => finishFromMoves('DNF')}>
@@ -418,7 +425,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           </div>
 
           <CubeView
-            state={usingCube && phase === 'scrambling' ? cubeState : targetState}
+            state={usingCube && phase === 'scrambling' ? live.shown : targetState}
+            animate={usingCube && phase === 'scrambling' ? live.animate : null}
             size={190}
             quaternion={usingCube && phase === 'scrambling' ? quaternion : null}
           />

@@ -61,8 +61,13 @@ partway through every `U2` and `R2`. So:
 | What you just turned | Colour | Meaning |
 |---|---|---|
 | the whole move, correctly | green | on to the next move |
-| right face, not far enough (wrong direction included) | yellow | part way through, with what is left spelled out |
+| right face, not far enough (wrong direction included) | yellow | part way through — keep turning |
 | a different face | red | now it is wrong, with the moves to undo it |
+
+Amber gets colour and nothing else. Being halfway through a half turn is what
+scrambling correctly looks like, so writing anything extra there would shove the
+rest of the scramble sideways on every other move, and text that jumps around
+under your eyes while you are reading it is worse than no text at all.
 
 Turning `U'` when `U2` was wanted is yellow too: another `U'` completes the half
 turn, no need to go back.
@@ -76,6 +81,13 @@ The highlight follows **the actual pieces** that step is responsible for — fou
 by colour, not by position — so while the first block is being built you see
 those five pieces light up even though they are still scattered, and watch them
 come together.
+
+Each step's block in the ribbon is split in two: the pause before its first turn
+drawn muted, then the turning itself in full colour. A step that is slow because
+you sat looking at it is a different problem from one that is slow because your
+hands are, and the two should not look the same. That pause belongs to the step
+it precedes — the step's time already runs from the previous step's last turn —
+which is now what the numbers say too.
 
 The reconstruction is written out **grouped by step**, each line in the frame the
 cube was actually being held in, with the bar under each move scaled to how long
@@ -110,11 +122,12 @@ turn the cube into it, then times you. Over many reps it builds a chart of the
 median time for **each move** of the algorithm and points at the one you hesitate
 on — usually where a regrip is needed.
 
-Two modes: drill **one case**, or **random within a family** — pick a few
-families and the app draws at random, walks you into the case and times you from
-entering it until it is solved. Cases you have never drilled come up more often
-so nothing is skipped, and at the end of the session there is a table of which
-cases are slowest.
+Two modes: drill **one case**, or **random within a family**. The random one is a
+loop you never have to interrupt: press start once, and from then on solving a
+case deals the next one immediately, while the one you just did stays on screen
+with its all-time best and median for that case, to read while you set the next
+one up. Cases you have never drilled come up more often so nothing is skipped,
+and a table of the slowest cases builds up as you go.
 
 *One thing worth saying plainly:* the setup sequence is the algorithm reversed,
 so seeing the whole thing gives the case away. That is why only **one move at a
@@ -237,6 +250,14 @@ which is the only thing keeping it honest.
 The default is a **3D cube** you can drag to rotate (or use the arrow keys),
 built with CSS transforms rather than a graphics library — the positions of all
 54 squares come straight from the same coordinate model the solving engine uses.
+
+It is built from 26 little boxes rather than a block with stickers stuck to it.
+That only matters when a layer turns: turn a box and the black plastic goes round
+with the colour, and the inside of the cube shows in the gap, the way it does in
+your hands. Rotating stickers over a body that stays put reads as stickers
+peeling off. Turns are animated wherever the cube is shown live, not only in the
+replay, and a move arriving mid-turn lands the previous one rather than falling
+behind your hands.
 The replay page has a quick toggle to the flat net when you want all six faces at
 once; change the default in Settings.
 
@@ -337,7 +358,7 @@ touches either block, so it stays safe).
 ## Tests
 
 ```bash
-npm test            # 342 assertions, runs in a few seconds
+npm test            # 362 assertions, runs in a few seconds
 npm run test:relay  # the relay, driven through a real socket (needs server/venv)
 npm run check:lse   # walks all 184,320 states of the LSE group ⟨M, U⟩
 ```
