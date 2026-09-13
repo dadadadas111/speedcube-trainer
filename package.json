@@ -27,7 +27,7 @@
     "cubing": "^0.63.4",
     "dexie": "^4.4.5",
     "dexie-react-hooks": "^4.4.0",
-    "gan-web-bluetooth": "^3.0.2",
+    "gan-web-bluetooth": "3.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.15.4",

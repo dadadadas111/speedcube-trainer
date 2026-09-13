@@ -8,6 +8,7 @@ import { CommandBudget, notifyAll } from './dispatch';
 import { ResetGesture } from './gesture';
 import { macKeysFor } from './mac';
 import { readConnectFailure } from './failure';
+import { DriverGuard, isDriverLike, DEFAULT_LIMITS } from './driverGuard';
 
 let fails = 0;
 const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.log('FAIL ' + n + (x ? '  <' + x + '>' : '')); } else console.log('ok   ' + n); };
@@ -244,6 +245,71 @@ const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.lo
   check('three turns held back', behind(43, 40) === 3);
   check('counts across the wrap at 255', behind(1, 254) === 3, String(behind(1, 254)));
   check('a stale snapshot does not read as 255 behind', behind(39, 40) === 255);
+}
+
+/* ---- The guard stays out of the way until something is stuck ---- */
+{
+  const driver = { moveBuffer: [] as unknown[], lastSerial: 40, serial: 40 };
+  const g = new DriverGuard();
+  check('an empty buffer is never touched', g.judge(driver, 0) === 'pass');
+  check('nor is it a moment later', g.judge(driver, 1) === 'pass');
+  check('and nothing is counted as held back', g.throttled === 0);
+}
+
+/* ---- With a gap open, the library's writes are spaced out ---- */
+{
+  // This is the flood: evictMoveBuffer asks for history on EVERY move event,
+  // so a ten-turns-a-second solve becomes ten GATT writes a second.
+  const driver = { moveBuffer: [1, 2] as unknown[], lastSerial: 40, serial: 43 };
+  const g = new DriverGuard();
+  check('the first write with a gap open goes out', g.judge(driver, 1000) === 'allow');
+  check('a write 50ms later is held', g.judge(driver, 1050) === 'throttle');
+  check('so is one at 249ms', g.judge(driver, 1249) === 'throttle');
+  check('one at 250ms goes out', g.judge(driver, 1250) === 'allow');
+
+  // A whole second of frantic turning must not become more than four writes
+  const h = new DriverGuard();
+  let sent = 0;
+  for (let t = 0; t < 1000; t += 100) if (h.judge(driver, t) === 'allow') sent++;
+  check('ten turns in a second yield four writes, not ten', sent === 4, String(sent));
+}
+
+/* ---- Past the limit it saves the link instead of the moves ---- */
+{
+  const stuck = Array.from({ length: DEFAULT_LIMITS.rescueAt }, (_, i) => i);
+  const driver = { moveBuffer: [...stuck] as unknown[], lastSerial: 40, serial: 51 };
+  const g = new DriverGuard();
+  check('a full buffer calls for a rescue', g.judge(driver, 0) === 'rescue');
+  const lost = g.rescue(driver);
+  check('the stuck moves are thrown away', lost === DEFAULT_LIMITS.rescueAt, String(lost));
+  check('the buffer is empty afterwards', driver.moveBuffer.length === 0);
+  check("the library is told it has caught up", driver.lastSerial === driver.serial);
+  check('and the count is remembered', g.dropped === DEFAULT_LIMITS.rescueAt);
+  check('a cleaned buffer is passed through again', g.judge(driver, 1) === 'pass');
+  // Well short of where the library would give up and close the link
+  check('rescue happens before the library disconnects at 17', DEFAULT_LIMITS.rescueAt < 17);
+}
+
+/* ---- A driver that is not the one we know is left alone ---- */
+{
+  check('the real shape is recognised', isDriverLike({ moveBuffer: [], lastSerial: 1, serial: 2 }));
+  check('null is not', !isDriverLike(null));
+  check('a missing buffer is not', !isDriverLike({ lastSerial: 1, serial: 2 }));
+  check('a buffer that is not an array is not', !isDriverLike({ moveBuffer: {}, lastSerial: 1, serial: 2 }));
+  check('a serial that is not a number is not', !isDriverLike({ moveBuffer: [], lastSerial: '1', serial: 2 }));
+}
+
+/* ---- Reconnecting starts clean ---- */
+{
+  const driver = { moveBuffer: [1, 2, 3] as unknown[], lastSerial: 1, serial: 9 };
+  const g = new DriverGuard();
+  g.judge(driver, 0);
+  g.judge(driver, 10);
+  check('something was held back', g.throttled > 0);
+  g.reset();
+  check('a new connection forgets the throttling', g.throttled === 0);
+  check('and forgets what was dropped', g.dropped === 0);
+  check('and lets the first write straight out', g.judge(driver, 10) === 'allow');
 }
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

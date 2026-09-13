@@ -13,6 +13,7 @@ import { readConnectFailure } from './failure';
 import { isFreshSerial } from './serial';
 import { CommandBudget, notifyAll } from './dispatch';
 import { ResetGesture } from './gesture';
+import { DriverGuard, isDriverLike, type DriverLike } from './driverGuard';
 
 export { normalizeMac, savedMacs, forgetMac } from './mac';
 
@@ -152,6 +153,10 @@ export class CubeLink {
   /** Four turns of D in a row means "this cube is solved, take my word for it" */
   private gesture = new ResetGesture();
   private gestureHolds = 0;
+  /** Stops the library flooding the cube while it is stuck behind a lost move */
+  private guard = new DriverGuard();
+  /** The library's protocol driver, when it looks like the one we know */
+  private driver: DriverLike | null = null;
 
   /**
    * Stop the four-D gesture from firing until the returned function is called.
@@ -259,6 +264,8 @@ export class CubeLink {
     // From here the radio link is up. Nothing below may undo that.
     this.conn = conn;
     this.info = { name: conn.deviceName, mac: conn.deviceMAC };
+    this.guard.reset();
+    this.installGuard(conn);
     this.sub = conn.events$.subscribe((e) => this.handle(e));
     this.status = 'connected';
     this.source = 'bluetooth';
@@ -266,6 +273,55 @@ export class CubeLink {
     this.note('connected', `${conn.deviceName} ${conn.deviceMAC}`);
     this.emitStatus();
     void this.handshake(conn);
+  }
+
+  /**
+   * Sit between the library and the cube's command characteristic.
+   *
+   * Every write the library makes goes through `sendCommandMessage`, including
+   * the move-history requests it fires on each turn while a move is missing.
+   * Wrapping it is the only place those can be slowed down, and the only place
+   * the buffer can be caught before the library gives up on the link. When
+   * nothing is stuck this passes straight through and changes nothing.
+   *
+   * If the driver is not shaped the way this expects — a different library
+   * version, say — the guard quietly does not install and everything behaves as
+   * it did before.
+   */
+  private installGuard(conn: GanCubeConnection) {
+    const holder = conn as unknown as { driver?: unknown; sendCommandMessage?: (m: Uint8Array) => Promise<void> };
+    const driver = holder.driver;
+    const send = holder.sendCommandMessage;
+    if (!isDriverLike(driver) || typeof send !== 'function') {
+      this.driver = null;
+      this.note('guard-unavailable');
+      return;
+    }
+    this.driver = driver;
+    const original = send.bind(conn);
+    holder.sendCommandMessage = async (message: Uint8Array) => {
+      const verdict = this.guard.judge(driver, performance.now());
+      if (verdict === 'throttle') return;
+      if (verdict === 'rescue') {
+        const lost = this.guard.rescue(driver);
+        this.note('rescued-link', `dropped ${lost} stuck moves`);
+        this.driftCount += lost;
+        this.movesBehind = 0;
+        // Our position is wrong by however many moves were thrown away, so the
+        // cube has to be asked what it is actually showing.
+        this.lastSerial = null;
+        this.lastMoveSerial = null;
+        void original(message).catch(() => {});
+        void this.command('REQUEST_FACELETS');
+        return;
+      }
+      return original(message);
+    };
+  }
+
+  /** Moves the guard has thrown away to keep the link alive. */
+  get droppedMoves(): number {
+    return this.guard.dropped;
   }
 
   /**
@@ -610,11 +666,17 @@ export class CubeLink {
         this.note('hardware', `${e.hardwareName} ${e.softwareVersion}`);
         this.emitStatus();
         break;
-      case 'DISCONNECT':
-        // The browser fired gattserverdisconnected: the radio link itself is
-        // gone. Nothing in the app can close it, so reaching here while still
-        // in use means the cube or the link gave up.
-        this.note('DISCONNECTED BY CUBE');
+      case 'DISCONNECT': {
+        // Who actually hung up matters. The library closes the link itself once
+        // more than sixteen moves pile up behind a missing one, and calling
+        // that "the cube disconnected" sends anyone reading the log looking in
+        // the wrong place entirely.
+        const stuck = this.driver?.moveBuffer.length ?? 0;
+        this.note(
+          stuck > 8 ? 'LIBRARY GAVE UP' : 'DISCONNECTED BY CUBE',
+          stuck > 0 ? `${stuck} moves stuck in the buffer` : undefined,
+        );
+        this.driver = null;
         this.droppedUnexpectedly = true;
         // Drop the subscription with it. Left behind, it survives into the
         // next connection and every move arrives twice. A phone bridging to
@@ -625,6 +687,7 @@ export class CubeLink {
         this.info = null;
         this.emitStatus();
         break;
+      }
     }
   }
 }
