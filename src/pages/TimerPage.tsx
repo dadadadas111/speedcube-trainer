@@ -16,6 +16,7 @@ import ScrambleGuide from '../components/ScrambleGuide';
 import CubeSync from '../components/CubeSync';
 import PostSolve from '../components/PostSolve';
 import StepRibbon from '../components/StepRibbon';
+import StepDetail from '../components/StepDetail';
 
 type Phase = 'scrambling' | 'ready' | 'inspecting' | 'holding' | 'armed' | 'running' | 'done';
 
@@ -50,6 +51,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const [showSync, setShowSync] = useState(false);
   /** The cube has turns it has not handed over yet — the clock is waiting on it */
   const [waitingOnCube, setWaitingOnCube] = useState(false);
+  /** The per-step numbers, opened over the cube. A phone has no hover. */
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const phaseRef = useRef<Phase>('scrambling');
   const lastMoveAtRef = useRef(0);
@@ -189,6 +192,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           movesRef.current = [m];
           setMoveCount(1);
           setWaitingOnCube(false);
+          setDetailOpen(false);
           startRef.current = performance.now();
           lastMoveAtRef.current = performance.now();
           setLastSolve(null);
@@ -344,6 +348,28 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
   /* ---------- derived ---------- */
   const analysis = useMemo(() => (lastSolve ? analyzeSolveRecord(lastSolve, settings) : null), [lastSolve, settings]);
+  /** There is a finished solve with steps to look at, and the cube is idle */
+  const canShowDetail = phase === 'done' && !!analysis && analysis.steps.length > 0;
+
+  /**
+   * Four turns of R opens and closes the step detail.
+   *
+   * The point is to keep your hands on the cube: a solve ends, you want to know
+   * where the time went, and reaching for a phone screen breaks the rhythm of
+   * a session. It is ignored anywhere but on a finished solve, so the same four
+   * turns during a scramble mean nothing.
+   */
+  useEffect(() => {
+    if (!canShowDetail) return;
+    return cubeLink.on({ viewGesture: () => setDetailOpen((v) => !v) });
+  }, [canShowDetail]);
+
+  // A solve that is no longer on screen has no detail to show
+  useEffect(() => {
+    if (!canShowDetail) setDetailOpen(false);
+  }, [canShowDetail]);
+
+
   const times = useMemo(() => recent.map(effectiveTime), [recent]);
   const finiteTimes = times.filter(isFinite);
   const ao5 = averageOf(times.slice(0, 5));
@@ -429,13 +455,16 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
               <div className="min-w-0 flex-1">
                 <ScrambleGuide moves={scramble} progress={phase === 'scrambling' ? progress : null} />
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                <div className="flex gap-1">
+              {/* One tight row. The mode is a two-state switch rather than two
+                  buttons, and a new scramble is an icon: it is the rarest thing
+                  here, since finishing a solve deals one anyway. */}
+              <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex overflow-hidden rounded-md border border-ink-700">
                   {(['speed', 'slow'] as const).map((m) => (
                     <button
                       key={m}
-                      className={`btn btn-ghost !px-2 !py-0.5 !text-[12px] ${
-                        settings.timerMode === m ? '!text-cube-blue' : '!text-ink-500'
+                      className={`px-2 py-0.5 text-[12px] transition-colors ${
+                        settings.timerMode === m ? 'bg-ink-700 text-ink-100' : 'text-ink-500'
                       }`}
                       onClick={() => void updateSettings({ timerMode: m })}
                       title={
@@ -448,15 +477,21 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
                     </button>
                   ))}
                 </div>
-                <button className="btn btn-ghost !py-1 !text-[13px]" onClick={() => void newScramble()}>
-                  New
+                <button
+                  className="rounded-md border border-ink-700 px-2 py-0.5 text-[13px] leading-5 text-ink-400"
+                  onClick={() => void newScramble()}
+                  title="New scramble"
+                  aria-label="New scramble"
+                >
+                  ↻
                 </button>
                 {settings.randomStateScramble && scrambleSource === 'random-move' && (
                   <span
-                    className="text-[11px] text-warn"
+                    className="text-[13px] leading-5 text-warn"
                     title="The random-state generator failed to load; falling back to random moves."
+                    aria-label="Falling back to random-move scrambles"
                   >
-                    random-move
+                    !
                   </span>
                 )}
               </div>
@@ -478,7 +513,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         )}
 
         {/* The clock and the cube, with nothing competing for attention */}
-        <section className="panel flex flex-col items-center gap-4 px-4 py-6 sm:py-8">
+        <section className="panel relative flex flex-col items-center gap-4 px-4 py-6 sm:py-8">
           <div className={`tnum font-mono text-[clamp(3rem,11vw,6.5rem)] font-semibold leading-none ${timerTone}`}>
             {phase === 'inspecting'
               ? (inspectLeft / 1000).toFixed(1)
@@ -495,14 +530,31 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
             </p>
           )}
 
-          <CubeView
-            state={
-              usingCube && phase === 'scrambling' ? (live.animate ? live.shown : cubeState) : targetState
-            }
-            animate={usingCube && phase === 'scrambling' ? live.animate : null}
-            size={190}
-            quaternion={usingCube && phase === 'scrambling' ? quaternion : null}
-          />
+          <div className="relative">
+            <CubeView
+              state={
+                usingCube && phase === 'scrambling' ? (live.animate ? live.shown : cubeState) : targetState
+              }
+              animate={usingCube && phase === 'scrambling' ? live.animate : null}
+              size={190}
+              quaternion={usingCube && phase === 'scrambling' ? quaternion : null}
+            />
+            {/* The solve is over, so the cube on screen has nothing left to say
+                and can carry the way in to the numbers instead. Four turns of R
+                does the same without putting the cube down. */}
+            {canShowDetail && !detailOpen && (
+              <button
+                type="button"
+                onClick={() => setDetailOpen(true)}
+                className="pop-in absolute inset-0 flex items-center justify-center"
+                aria-label="Show the step detail"
+              >
+                <span className="rounded-full border border-ink-600 bg-ink-900/75 px-3 py-1.5 text-[12px] text-ink-200 backdrop-blur-sm">
+                  detail <span className="text-ink-500">· R ×4</span>
+                </span>
+              </button>
+            )}
+          </div>
 
           {phase === 'ready' && usingCube && (
             <p className="armed text-sm font-semibold text-good">Turn to start</p>
@@ -519,6 +571,10 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
             >
               Apply the scramble to the virtual cube
             </button>
+          )}
+
+          {canShowDetail && detailOpen && analysis && (
+            <StepDetail steps={analysis.steps} totalMs={analysis.totalMs} onClose={() => setDetailOpen(false)} />
           )}
         </section>
 

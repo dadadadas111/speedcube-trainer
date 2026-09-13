@@ -67,6 +67,14 @@ type Listener = {
   /** The four-D gesture was made and the cube has been told it is solved */
   resetGesture?: () => void;
   /**
+   * Four turns of R: "show me the detail".
+   *
+   * Unlike the D gesture this changes nothing about the cube, so it is only a
+   * request — whoever is listening decides whether it means anything where the
+   * app currently is.
+   */
+  viewGesture?: () => void;
+  /**
    * Every event exactly as the cube reported it, before any interpretation.
    * Used by a phone bridging to a computer, which forwards them untouched.
    */
@@ -152,6 +160,15 @@ export class CubeLink {
   private finishBudget = new CommandBudget(600, 6);
   /** Four turns of D in a row means "this cube is solved, take my word for it" */
   private gesture = new ResetGesture();
+  /**
+   * Four turns of R asks to see the detail of the solve just finished.
+   *
+   * The same trick as the D gesture and safe for the same reason — R R R R
+   * leaves the cube where it was — but this one is not held during a solve.
+   * It does not touch the cube, so the worst it can do mid-solve is ask a
+   * question nobody is listening to.
+   */
+  private viewGesture = new ResetGesture('R');
   private gestureHolds = 0;
   /** Stops the library flooding the cube while it is stuck behind a lost move */
   private guard = new DriverGuard();
@@ -448,6 +465,7 @@ export class CubeLink {
     this.lastMoveSerial = null;
     this.movesBehind = 0;
     this.gesture.reset();
+    this.viewGesture.reset();
     const at = performance.now();
     this.budget.spendFreely(at);
     this.finishBudget.spendFreely(at);
@@ -600,10 +618,15 @@ export class CubeLink {
         // Four quarter turns of D leave the cube untouched, so this can be
         // checked before anything else without changing what the move does.
         const at = e.localTimestamp ?? e.timestamp;
-        if (this.gestureHolds === 0 && this.gesture.push(e.move, Number.isFinite(at) ? at : performance.now())) {
+        const gestureAt = Number.isFinite(at) ? at : performance.now();
+        if (this.gestureHolds === 0 && this.gesture.push(e.move, gestureAt)) {
           this.note('reset-gesture');
           this.notify((l) => l.resetGesture?.());
           void this.resetToSolved();
+        }
+        if (this.viewGesture.push(e.move, gestureAt)) {
+          this.note('view-gesture');
+          this.notify((l) => l.viewGesture?.());
         }
         const lm: LiveMove = {
           move: e.move,

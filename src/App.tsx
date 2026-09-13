@@ -80,19 +80,20 @@ export default function App() {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col pb-[4.25rem] sm:pb-0">
-        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-ink-800 px-4 py-2.5 sm:px-6">
+        <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-ink-800 px-3 py-1.5 sm:px-6 sm:py-2.5">
           <div className="flex items-center gap-2">
             <span className="flex gap-[3px] sm:hidden">
               <span className="size-2.5 rounded-[2px] bg-cube-blue" />
               <span className="size-2.5 rounded-[2px] bg-cube-green" />
               <span className="size-2.5 rounded-[2px] bg-cube-red" />
             </span>
-            <label className="text-[13px] text-ink-400" htmlFor="session-select">
+            <label className="hidden text-[13px] text-ink-400 sm:inline" htmlFor="session-select">
               Session
             </label>
             <select
               id="session-select"
-              className="input !w-auto !py-1 !text-[13px]"
+              aria-label="Session"
+              className="input !w-auto max-w-[9rem] !py-1 !text-[13px] sm:max-w-none"
               value={sessionId}
               onChange={(e) => void setSession(Number(e.target.value))}
             >

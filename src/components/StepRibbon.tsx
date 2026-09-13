@@ -8,9 +8,12 @@
  * because you sat looking at it is a different problem from one that is slow
  * because your hands are, and the two should not look the same.
  *
- * The row underneath carries only the short name and the time, because that is
- * what gets read at a glance — "FB 1.72  SB 2.65" is a shape you recognise. The
- * rest is one hover away.
+ * Labelled, it reads as three rows over the same columns: the seconds above the
+ * block they belong to, the block, and the step's name below it in the block's
+ * own colour. Nothing has to be matched up against a legend, and nothing sits
+ * in a wrapping row that reflows every time a solve changes shape. A column too
+ * narrow for its text simply goes without — the numbers are all one tap away in
+ * the detail sheet, and a squeezed "0.4" overlapping its neighbour helps no one.
  */
 
 import { useState } from 'react';
@@ -31,6 +34,21 @@ interface Props {
 /** Below this, calling it out is noise rather than information. */
 const WORTH_MENTIONING_MS = 300;
 
+/**
+ * How much of the ribbon a column needs before its text fits.
+ *
+ * Two thresholds because the two rows hold different things: a time is always
+ * four or five characters ("1.72", "12.40"), a short name is two to four ("FB",
+ * "4b", "CMLL"). One threshold for both would either crop the times or throw
+ * away names that had room. Measured at a phone's ~330px of ribbon: 8% is about
+ * 26px, which is "1.72" at 11px, and 5% is about 16px, which is "FB".
+ *
+ * A column below the bar keeps its colour and its place; it just goes without
+ * words. Everything about it is one tap away in the detail sheet.
+ */
+const TIME_MIN_PCT = 8;
+const NAME_MIN_PCT = 5;
+
 /** The step's own colour, drained of most of it. */
 const recogColor = (key: string) => `color-mix(in srgb, ${stepColor(key)} 30%, var(--color-ink-800))`;
 
@@ -39,33 +57,53 @@ export default function StepRibbon({ steps, totalMs, height = 10, showLabels, ac
   const [hover, setHover] = useState<string | null>(null);
   const shown = steps.find((s) => s.key === hover) ?? null;
 
+  const columns = steps
+    .map((s) => ({ step: s, pct: (s.durationMs / total) * 100 }))
+    .filter((c) => c.pct > 0);
+
+  const dim = (key: string) => (!activeKey || activeKey === key ? 1 : 0.25);
+  const hoverProps = (key: string) => ({
+    onMouseEnter: () => setHover(key),
+    onMouseLeave: () => setHover((h) => (h === key ? null : h)),
+  });
+
   return (
     <div className="w-full">
+      {showLabels && (
+        <div className="flex w-full">
+          {columns.map(({ step, pct }) => (
+            <span
+              key={step.key}
+              style={{ width: `${pct}%`, opacity: dim(step.key) }}
+              className="tnum overflow-hidden text-center font-mono text-[11px] leading-tight whitespace-nowrap text-ink-300"
+            >
+              {pct >= TIME_MIN_PCT ? formatSeconds(step.durationMs) : ''}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="relative">
-        <div className="flex w-full overflow-hidden rounded-[3px]" style={{ height }}>
-          {steps.map((s) => {
-            const pctW = (s.durationMs / total) * 100;
-            if (pctW <= 0) return null;
-            const active = !activeKey || activeKey === s.key;
-            const recogPct = s.durationMs > 0 ? Math.min(100, (s.leadMs / s.durationMs) * 100) : 0;
+        <div className={`flex w-full overflow-hidden rounded-[3px] ${showLabels ? 'my-1' : ''}`} style={{ height }}>
+          {columns.map(({ step, pct }) => {
+            const recogPct = step.durationMs > 0 ? Math.min(100, (step.leadMs / step.durationMs) * 100) : 0;
             const Tag = onSelect ? 'button' : 'div';
             return (
               <Tag
-                key={s.key}
-                {...(onSelect ? { type: 'button' as const, onClick: () => onSelect(s.key) } : {})}
-                onMouseEnter={() => setHover(s.key)}
-                onMouseLeave={() => setHover((h) => (h === s.key ? null : h))}
+                key={step.key}
+                {...(onSelect ? { type: 'button' as const, onClick: () => onSelect(step.key) } : {})}
+                {...hoverProps(step.key)}
                 className="flex h-full border-0 p-0 transition-opacity"
                 style={{
-                  width: `${pctW}%`,
-                  background: stepColor(s.key),
-                  opacity: active ? 1 : 0.25,
+                  width: `${pct}%`,
+                  background: stepColor(step.key),
+                  opacity: dim(step.key),
                   cursor: onSelect ? 'pointer' : 'default',
                 }}
-                aria-label={`${s.label} ${formatSeconds(s.durationMs)} seconds`}
+                aria-label={`${step.label} ${formatSeconds(step.durationMs)} seconds`}
               >
                 {recogPct > 0 && (
-                  <span className="h-full" style={{ width: `${recogPct}%`, background: recogColor(s.key) }} />
+                  <span className="h-full" style={{ width: `${recogPct}%`, background: recogColor(step.key) }} />
                 )}
               </Tag>
             );
@@ -75,21 +113,26 @@ export default function StepRibbon({ steps, totalMs, height = 10, showLabels, ac
       </div>
 
       {showLabels && (
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-          {steps.map((s) => {
+        <div className="flex w-full">
+          {columns.map(({ step, pct }) => {
             const Tag = onSelect ? 'button' : 'div';
             return (
               <Tag
-                key={s.key}
-                {...(onSelect ? { type: 'button' as const, onClick: () => onSelect(s.key) } : {})}
-                onMouseEnter={() => setHover(s.key)}
-                onMouseLeave={() => setHover((h) => (h === s.key ? null : h))}
-                className="flex items-baseline gap-1.5 border-0 bg-transparent p-0 text-left"
-                style={{ cursor: onSelect ? 'pointer' : 'default', opacity: !activeKey || activeKey === s.key ? 1 : 0.4 }}
+                key={step.key}
+                {...(onSelect ? { type: 'button' as const, onClick: () => onSelect(step.key) } : {})}
+                {...hoverProps(step.key)}
+                className="overflow-hidden border-0 bg-transparent p-0 text-center text-[11px] leading-tight font-semibold whitespace-nowrap"
+                // The name carries the colour, so the swatch that used to sit
+                // beside it is redundant — and on a phone it cost more width
+                // than the name itself.
+                style={{
+                  width: `${pct}%`,
+                  color: stepColor(step.key),
+                  opacity: dim(step.key),
+                  cursor: onSelect ? 'pointer' : 'default',
+                }}
               >
-                <span className="inline-block size-2 shrink-0 translate-y-px rounded-[2px]" style={{ background: stepColor(s.key) }} />
-                <span className="text-[13px] text-ink-400">{shortStep(s.key)}</span>
-                <span className="tnum font-mono text-[13px] text-ink-100">{formatSeconds(s.durationMs)}</span>
+                {pct >= NAME_MIN_PCT ? shortStep(step.key) : ''}
               </Tag>
             );
           })}
@@ -104,13 +147,16 @@ export default function StepRibbon({ steps, totalMs, height = 10, showLabels, ac
  *
  * Recognition and execution are shown as a pair because they add up to the
  * total: the time spent looking at it, then the time spent turning it.
+ *
+ * Hover is a pointer's idea, so this never appears on a phone. The same numbers
+ * live in StepDetail, which a tap or four turns of R will open.
  */
 function StepCard({ step, total }: { step: StepAnalysis; total: number }) {
   const exec = Math.max(0, step.durationMs - step.leadMs);
   return (
     // Below the ribbon rather than above it: the ribbon usually sits at the top
     // of its panel, and a card above would be cut off by the panel's edge.
-    <div className="panel pointer-events-none absolute left-1/2 top-full z-30 mt-2 w-max -translate-x-1/2 px-3 py-2 shadow-lg">
+    <div className="panel pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-max -translate-x-1/2 px-3 py-2 shadow-lg sm:block">
       <div className="flex items-baseline gap-2">
         <span className="inline-block size-2 shrink-0 rounded-[2px]" style={{ background: stepColor(step.key) }} />
         <span className="text-[13px] font-semibold">{step.label}</span>
@@ -143,3 +189,5 @@ function Row({ label, value }: { label: string; value: string }) {
     </>
   );
 }
+
+export { WORTH_MENTIONING_MS };

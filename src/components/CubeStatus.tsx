@@ -92,7 +92,7 @@ export default function CubeStatus() {
         <>
           <span className="flex items-center gap-1.5 text-[13px] text-ink-300">
             <span className="size-2 rounded-full" style={{ background: dot }} />
-            {cubeInfo?.name ?? 'Cube'}
+            <span className="hidden sm:inline">{cubeInfo?.name ?? 'Cube'}</span>
             {cubeInfo?.battery != null && <span className="tnum text-ink-400">{cubeInfo.battery}%</span>}
           </span>
           <div className="relative">
@@ -118,19 +118,30 @@ export default function CubeStatus() {
               </div>
             )}
           </div>
-          <button className="btn btn-ghost !px-2 !py-1 !text-[13px]" onClick={() => void cubeLink.disconnect()}>
+          {/* Nobody disconnects a working cube from a phone mid-session */}
+          <button
+            className="btn btn-ghost hidden !px-2 !py-1 !text-[13px] sm:inline-flex"
+            onClick={() => void cubeLink.disconnect()}
+          >
             Disconnect
           </button>
         </>
       ) : (
         <button className="btn !py-1 !text-[13px]" onClick={() => void connect()} disabled={cubeStatus === 'connecting'}>
           <span className="size-2 rounded-full" style={{ background: dot }} />
-          {cubeStatus === 'connecting' ? 'Connecting…' : dropped ? 'Cube dropped — reconnect' : 'Connect smart cube'}
+          {/* The long form explains itself on a desktop; on a phone it would
+              push the bridge button onto a second row for no gain. */}
+          <span className="sm:hidden">
+            {cubeStatus === 'connecting' ? 'Connecting…' : dropped ? 'Reconnect' : 'Connect'}
+          </span>
+          <span className="hidden sm:inline">
+            {cubeStatus === 'connecting' ? 'Connecting…' : dropped ? 'Cube dropped — reconnect' : 'Connect smart cube'}
+          </span>
         </button>
       )}
 
       {/* A phone with bluetooth can hold the cube for a machine without it */}
-      <div className="relative">
+      <div className={`relative ${cubeStatus === 'connected' ? 'hidden sm:block' : ''}`}>
         <button
           className={`btn btn-ghost !px-2 !py-1 !text-[13px] ${remoteRole ? '!text-cube-blue' : ''}`}
           onClick={() => setBridgeOpen((v) => !v)}
