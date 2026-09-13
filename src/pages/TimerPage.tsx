@@ -451,14 +451,13 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
       <div className="flex min-h-0 flex-col gap-4">
         {scrambleVisible && (
           <section className="panel px-4 py-3.5 sm:px-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <ScrambleGuide moves={scramble} progress={phase === 'scrambling' ? progress : null} />
-              </div>
-              {/* One tight row. The mode is a two-state switch rather than two
-                  buttons, and a new scramble is an icon: it is the rarest thing
-                  here, since finishing a solve deals one anyway. */}
-              <div className="flex shrink-0 items-center gap-1.5">
+            {/* Above the scramble, not beside it. Sharing a row cost the
+                scramble a third of the width and broke it onto four short
+                lines — and the scramble is the one thing on this panel you
+                actually have to read. The mode is a two-state switch rather
+                than two buttons, and a new scramble is an icon: it is the
+                rarest thing here, since finishing a solve deals one anyway. */}
+            <div className="mb-2 flex items-center justify-end gap-1.5">
                 <div className="flex overflow-hidden rounded-md border border-ink-700">
                   {(['speed', 'slow'] as const).map((m) => (
                     <button
@@ -494,8 +493,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
                     !
                   </span>
                 )}
-              </div>
             </div>
+            <ScrambleGuide moves={scramble} progress={phase === 'scrambling' ? progress : null} />
             {notReady && (
               <button
                 className="mt-2 text-[12px] text-warn underline underline-offset-2"
