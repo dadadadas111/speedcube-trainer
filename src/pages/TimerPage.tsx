@@ -22,6 +22,13 @@ type Phase = 'scrambling' | 'ready' | 'inspecting' | 'holding' | 'armed' | 'runn
 const HOLD_MS = 350;
 /** How long the hands have to be still before offering a way out of the solve */
 const STUCK_MS = 3000;
+/**
+ * How still the hands have to be before asking the cube whether it is solved.
+ *
+ * Turns during a solve land 100-200ms apart, so a third of a second without one
+ * means the hands have come off the cube.
+ */
+const STILL_MS = 350;
 
 export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) => void }) {
   const { settings, updateSettings, sessionId, cubeStatus, bump, revision } = useApp();
@@ -41,6 +48,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   /** Live move count — what slow mode puts on screen in place of the clock */
   const [moveCount, setMoveCount] = useState(0);
   const [showSync, setShowSync] = useState(false);
+  /** The cube has turns it has not handed over yet — the clock is waiting on it */
+  const [waitingOnCube, setWaitingOnCube] = useState(false);
 
   const phaseRef = useRef<Phase>('scrambling');
   const lastMoveAtRef = useRef(0);
@@ -118,6 +127,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
       stopRaf();
       setDisplay(timeMs);
       setStuck(false);
+      setWaitingOnCube(false);
       setPhaseBoth('done');
       const solve: Solve = {
         sessionId,
@@ -178,6 +188,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
         if (p === 'ready' || p === 'inspecting') {
           movesRef.current = [m];
           setMoveCount(1);
+          setWaitingOnCube(false);
           startRef.current = performance.now();
           lastMoveAtRef.current = performance.now();
           setLastSolve(null);
@@ -316,10 +327,16 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   useEffect(() => {
     if (phase !== 'running' || cubeStatus !== 'connected') return;
     const id = setInterval(() => {
-      // Only ask after the hands have stopped for a moment — mid-turn there is
-      // no need, and it keeps the bluetooth link clear during the solve.
-      if (performance.now() - lastMoveAtRef.current > 1000) void cubeLink.pollState();
-    }, 500);
+      // Only ask once the hands have stopped — mid-turn there is no need, and
+      // it keeps the bluetooth link clear during the solve. A solve's turns are
+      // 100-200ms apart, so a third of a second of stillness already means the
+      // hands have come off the cube; waiting a whole second to start asking
+      // was the difference between the clock stopping and the clock running on.
+      if (performance.now() - lastMoveAtRef.current > STILL_MS) {
+        void cubeLink.pollFinish();
+        setWaitingOnCube(cubeLink.movesBehind > 0);
+      }
+    }, 250);
     return () => clearInterval(id);
   }, [phase, cubeStatus]);
 
@@ -379,6 +396,11 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
             quaternion={quaternion}
             interactive={false}
           />
+        )}
+        {waitingOnCube && !stuck && (
+          // Turns are stuck in the bluetooth buffer, not lost. Saying so beats
+          // leaving you to wonder why the clock is running on a solved cube.
+          <p className="pop-in text-sm text-warn">Catching up with the cube…</p>
         )}
         {stuck ? (
           <button className="btn btn-danger pop-in" onClick={() => finishFromMoves('DNF')}>

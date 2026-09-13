@@ -193,4 +193,57 @@ const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.lo
   check('an unrecognised error still reports itself', readConnectFailure(new Error('weird thing')).message === 'weird thing');
 }
 
+/* ---- The end-of-solve budget asks sooner, and keeps asking longer ---- */
+{
+  // The idle budget protects the link during a solve. The finish budget has a
+  // different job: a solve has ended and turns may be stuck in the library's
+  // buffer, and only a facelets request shakes them loose.
+  const idle = new CommandBudget(1500, 4);
+  const finish = new CommandBudget(600, 6);
+
+  // Both are refilled by the last move of the solve
+  idle.refill(0);
+  finish.refill(0);
+
+  check('the idle budget will not ask at 600ms', !idle.take(600));
+  check('the finish budget asks at 600ms', finish.take(600));
+
+  // How long before each one has asked at all — the gap that left the clock running
+  const firstAsk = (b: CommandBudget, from: number) => {
+    for (let t = from; t <= from + 4000; t += 50) if (b.take(t)) return t - from;
+    return Infinity;
+  };
+  const a = new CommandBudget(1500, 4); a.refill(0);
+  const f = new CommandBudget(600, 6); f.refill(0);
+  check('idle first asks at 1500ms', firstAsk(a, 0) === 1500, String(firstAsk(a, 0)));
+  check('finish first asks at 600ms', firstAsk(f, 0) === 600, String(firstAsk(f, 0)));
+
+  // And it does not give up as quickly: six tries at 600ms covers ~3.6s
+  const g = new CommandBudget(600, 6);
+  g.refill(0);
+  let asks = 0;
+  for (let t = 600; t <= 6000; t += 100) if (g.take(t)) asks++;
+  check('the finish budget asks six times then stops', asks === 6, String(asks));
+
+  // A move mid-wait means the hands are back on the cube: start over
+  const h = new CommandBudget(600, 6);
+  h.refill(0);
+  for (let t = 600; t <= 3600; t += 600) h.take(t);
+  check('spent after six asks', !h.take(4200));
+  h.refill(4300); // a move arrived
+  check('a move gives the finish budget back', h.take(4900));
+}
+
+/* ---- How far behind the cube is, read off the serial numbers ---- */
+{
+  // The cube's move counter wraps at 256. A facelets packet carries it, and the
+  // difference from the last move handed to us is how many turns are held back.
+  const behind = (cubeSerial: number, lastMove: number) => (((cubeSerial - lastMove) % 256) + 256) % 256;
+  check('in step means nothing outstanding', behind(40, 40) === 0);
+  check('one turn held back', behind(41, 40) === 1);
+  check('three turns held back', behind(43, 40) === 3);
+  check('counts across the wrap at 255', behind(1, 254) === 3, String(behind(1, 254)));
+  check('a stale snapshot does not read as 255 behind', behind(39, 40) === 255);
+}
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

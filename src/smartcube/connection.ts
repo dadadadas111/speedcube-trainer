@@ -106,6 +106,17 @@ export class CubeLink {
   garbledCount = 0;
   /** Serial of the last applied move; used to drop stale state snapshots */
   private lastSerial: number | null = null;
+  /** Serial of the last move actually delivered to us, never of a snapshot */
+  private lastMoveSerial: number | null = null;
+  /**
+   * How many turns the cube says it has made that have not reached us.
+   *
+   * Read off the difference between the cube's own move counter, which every
+   * facelets packet carries, and the last move we were handed. Above zero means
+   * turns are stuck in the library's buffer waiting for a gap to be filled —
+   * which is exactly the state where a finished solve goes unnoticed.
+   */
+  movesBehind = 0;
   /** Set when the UI can prompt the user for the MAC address */
   askForMac: ((deviceName: string) => Promise<string | null>) | null = null;
   /** True when the link dropped on its own rather than being closed here */
@@ -123,6 +134,21 @@ export class CubeLink {
    * giving up until the cube does something again.
    */
   private budget = new CommandBudget(1500, 4);
+  /**
+   * A second, quicker budget for the moment a solve looks finished.
+   *
+   * The library holds moves in a FIFO and stops releasing them the instant a
+   * serial goes missing, then asks the cube for the history to fill the gap.
+   * That request is a GATT write, and its own comment says a failed one is
+   * "retried on next move event" — but a solve that has just ended has no next
+   * move, so the buffer can sit there holding the last turns of the solve while
+   * the clock runs on. REQUEST_FACELETS is what breaks the deadlock: the
+   * library checks for missed moves whenever a facelets packet comes back.
+   *
+   * So this one is allowed to ask sooner and to keep asking a little longer.
+   * It is still bounded, and it still only fires when the hands have stopped.
+   */
+  private finishBudget = new CommandBudget(600, 6);
   /** Four turns of D in a row means "this cube is solved, take my word for it" */
   private gesture = new ResetGesture();
   private gestureHolds = 0;
@@ -363,8 +389,12 @@ export class CubeLink {
    */
   async resync(): Promise<void> {
     this.lastSerial = null;
+    this.lastMoveSerial = null;
+    this.movesBehind = 0;
     this.gesture.reset();
-    this.budget.spendFreely(performance.now());
+    const at = performance.now();
+    this.budget.spendFreely(at);
+    this.finishBudget.spendFreely(at);
     this.note('resync');
     await this.command('REQUEST_FACELETS');
   }
@@ -381,6 +411,24 @@ export class CubeLink {
     if (this.status !== 'connected') return;
     if (!this.conn && this.source !== 'remote') return;
     if (!this.budget.take(performance.now())) return;
+    await this.command('REQUEST_FACELETS');
+  }
+
+  /**
+   * The same question, asked by a timer that believes the solve just ended.
+   *
+   * This is the one that matters. A facelets packet does two jobs at once: it
+   * tells the app the true position, and it makes the library go and fetch any
+   * moves it is holding back. Waiting a second and a half to ask means a
+   * finished solve can sit there with the clock running, so this budget asks
+   * sooner and does not give up as quickly — while still only firing once the
+   * hands have stopped, and still being rate limited.
+   */
+  async pollFinish(): Promise<void> {
+    if (this.status !== 'connected') return;
+    if (!this.conn && this.source !== 'remote') return;
+    if (!this.finishBudget.take(performance.now())) return;
+    this.note('poll-finish', this.movesBehind ? `behind ${this.movesBehind}` : undefined);
     await this.command('REQUEST_FACELETS');
   }
 
@@ -487,7 +535,11 @@ export class CubeLink {
           break;
         }
         this.lastSerial = e.serial;
-        this.budget.refill(performance.now());
+        this.lastMoveSerial = e.serial;
+        this.movesBehind = 0;
+        const atNow = performance.now();
+        this.budget.refill(atNow);
+        this.finishBudget.refill(atNow);
         this.state = applyMove(this.state, e.move);
         // Four quarter turns of D leave the cube untouched, so this can be
         // checked before anything else without changing what the move does.
@@ -521,6 +573,13 @@ export class CubeLink {
           this.note('garbled');
           this.notify((l) => l.garbled?.());
           break;
+        }
+        // The cube's own move counter. Ahead of the last move we were handed
+        // means turns are still stuck in the library's buffer.
+        if (this.lastMoveSerial !== null) {
+          const behind = (((e.serial - this.lastMoveSerial) % 256) + 256) % 256;
+          this.movesBehind = behind <= 8 ? behind : 0;
+          if (this.movesBehind > 0) this.note('moves-behind', String(this.movesBehind));
         }
         // Drop snapshots older than the last applied move, or the app's state
         // gets dragged backwards (see smartcube/serial.ts).
