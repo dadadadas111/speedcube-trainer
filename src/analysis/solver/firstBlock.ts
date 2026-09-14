@@ -68,16 +68,30 @@ const cache = new Map<string, BlockTables>();
  * Exact distances for one half of the block, from every arrangement it can
  * reach — measured to the nearest of the twenty-four finished placements, so
  * the bound matches the goal the search is actually aiming at.
+ *
+ * The walk carries only the six stickers this half is about, not all twelve.
+ * A move permutes positions one at a time, so stepping a subset is the same
+ * arithmetic on half the data — and the search keeps one array per state it has
+ * seen, so halving them halves the peak memory of building the tables. That
+ * peak is what matters: a phone building all twenty-four of these at once is
+ * the difference between a pause and the browser taking the tab away.
  */
-function walk(which: number[], HOME_PLACEMENTS: Uint8Array[]): Map<number, number> {
+function walk(which: number[], placements: Uint8Array[]): Map<number, number> {
+  const project = (full: Uint8Array) => Uint8Array.from(which, (i) => full[i]);
+  const keyOfSub = (sub: ArrayLike<number>) => {
+    let k = 0;
+    for (let i = 0; i < sub.length; i++) k = k * 54 + sub[i];
+    return k;
+  };
   const dist = new Map<number, number>();
   const seen = new Map<number, Uint8Array>();
   const frontier0: number[] = [];
-  for (const home of HOME_PLACEMENTS) {
-    const key = pick(home, which);
+  for (const home of placements) {
+    const sub = project(home);
+    const key = keyOfSub(sub);
     if (dist.has(key)) continue;
     dist.set(key, 0);
-    seen.set(key, home);
+    seen.set(key, sub);
     frontier0.push(key);
   }
 
@@ -90,7 +104,7 @@ function walk(which: number[], HOME_PLACEMENTS: Uint8Array[]): Map<number, numbe
       const from = seen.get(key)!;
       for (let m = 0; m < FB_MOVES.names.length; m++) {
         const at = stepped(from, FB_MOVES.to[m]);
-        const k = pick(at, which);
+        const k = keyOfSub(at);
         if (dist.has(k)) continue;
         dist.set(k, depth);
         seen.set(k, at);
@@ -115,6 +129,26 @@ export function blockTables(spec: BlockSpec = HOME_BLOCK): BlockTables {
 }
 
 export const fbTables = () => blockTables(HOME_BLOCK);
+
+/** Are all twenty-four blocks' tables built and waiting? */
+export const blockTablesReady = () => FIRST_BLOCKS.every((b) => cache.has(b.tracked.join(',')));
+
+/**
+ * Build every block's tables, one block per turn of the event loop.
+ *
+ * All twenty-four at once is a second and a half on a desktop and a good deal
+ * worse on a phone, and done synchronously that is a second and a half with
+ * nothing on screen moving — which is indistinguishable from a crash, and on a
+ * phone can become one. Yielding between blocks keeps the page answering and
+ * lets the caller show how far along it is.
+ */
+export async function prepareBlockTables(onProgress?: (done: number, total: number) => void): Promise<void> {
+  for (let i = 0; i < FIRST_BLOCKS.length; i++) {
+    blockTables(FIRST_BLOCKS[i]);
+    onProgress?.(i + 1, FIRST_BLOCKS.length);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+}
 
 /** A lower bound on the moves left: solving either half alone cannot be quicker. */
 function estimateWith(t: BlockTables, at: Uint8Array): number {
@@ -244,6 +278,24 @@ export function analyseBlocks(scramble: string[], perBlock = 2): BlockChoice[] {
  * not end solved after building a block, so there is no scramble-from-solved to
  * apply. Scramble it however you like and the app reads the position off it.
  */
+export async function analyseBlocksFromStateAsync(
+  state: CubeState,
+  perBlock = 2,
+  onProgress?: (done: number, total: number) => void,
+): Promise<BlockChoice[] | null> {
+  const out: BlockChoice[] = [];
+  for (let i = 0; i < FIRST_BLOCKS.length; i++) {
+    const spec = FIRST_BLOCKS[i];
+    const at = positionsFromState(state, spec.tracked);
+    if (!at) return null;
+    const r = solveBlockFrom(spec, at, perBlock);
+    out.push({ spec, length: r.length, solutions: r.solutions });
+    onProgress?.(i + 1, FIRST_BLOCKS.length);
+    await new Promise((r2) => setTimeout(r2, 0));
+  }
+  return out.sort((a, b) => a.length - b.length);
+}
+
 export function analyseBlocksFromState(state: CubeState, perBlock = 2): BlockChoice[] | null {
   const out: BlockChoice[] = [];
   for (const spec of FIRST_BLOCKS) {

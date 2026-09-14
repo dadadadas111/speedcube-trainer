@@ -4,6 +4,7 @@ import { exportAll, importAll, db } from '../store/db';
 import { KEYMAP_HELP } from '../smartcube/virtual';
 import { cubeLink, savedMacs, forgetMac } from '../smartcube/connection';
 import CubeSync from '../components/CubeSync';
+import { recentCrashes, clearCrashes, formatCrash } from '../store/crashLog';
 
 export default function SettingsPage() {
   const { settings, updateSettings, sessions, sessionId, addSession, renameSession, deleteSession, setSession, bump } = useApp();
@@ -262,6 +263,7 @@ export default function SettingsPage() {
         </div>
 
         <CubeLog />
+        <CrashLog />
 
         <h3 className="mt-5 text-sm font-semibold">Saved MAC addresses</h3>
         <p className="mt-1 max-w-[65ch] text-[13px] text-ink-400">
@@ -348,6 +350,46 @@ function Toggle({
  * numbers, every command sent, and whether the link was closed here or given up
  * by the cube. Copy it out when something goes wrong.
  */
+/**
+ * Crashes that survived the reload after them.
+ *
+ * Sits beside the connection log because the two are usually read together:
+ * what the cube was doing, and what broke while it did it.
+ */
+function CrashLog() {
+  const [, force] = useState(0);
+  const crashes = recentCrashes();
+  if (!crashes.length) return null;
+  const text = crashes.map(formatCrash).join('\n\n');
+  return (
+    <details className="mt-5">
+      <summary className="cursor-pointer text-sm font-semibold text-bad">
+        Crashes ({crashes.length})
+      </summary>
+      <p className="mt-1 text-[12px] text-ink-500">
+        Kept across reloads. Copy this into a bug report — it says what broke and where.
+      </p>
+      <div className="mt-2 flex gap-2">
+        <button className="btn !py-1 !text-[12px]" onClick={() => void navigator.clipboard?.writeText(text)}>
+          Copy
+        </button>
+        <button
+          className="btn !py-1 !text-[12px]"
+          onClick={() => {
+            clearCrashes();
+            force((n) => n + 1);
+          }}
+        >
+          Clear
+        </button>
+      </div>
+      <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-ink-700 bg-ink-900 p-3 font-mono text-[12px] leading-relaxed text-ink-300">
+        {text}
+      </pre>
+    </details>
+  );
+}
+
 function CubeLog() {
   const [, force] = useState(0);
   const entries = cubeLink.log;

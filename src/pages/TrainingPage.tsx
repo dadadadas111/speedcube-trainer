@@ -26,7 +26,13 @@ import { cleanMoveStream } from '../cube/moveStream';
 import { formatAlg } from '../cube/alg';
 import { formatSeconds } from '../analysis/stats';
 import { FACE_COLORS } from '../components/palette';
-import { FB_METRIC, analyseBlocksFromState, type BlockChoice } from '../analysis/solver/firstBlock';
+import {
+  FB_METRIC,
+  analyseBlocksFromStateAsync,
+  blockTablesReady,
+  prepareBlockTables,
+  type BlockChoice,
+} from '../analysis/solver/firstBlock';
 import { blocksBuilt, type BlockSpec } from '../analysis/solver/blocks';
 import { lseSetupFromState, randomLseCase, solveLse } from '../analysis/solver/lse';
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
@@ -101,9 +107,13 @@ export default function TrainingPage() {
   const [dealing, setDealing] = useState(false);
   /** Something the app cannot do from here, said plainly */
   const [problem, setProblem] = useState<string | null>(null);
+  /** How far along the one-off table build is, while it is happening */
+  const [prep, setPrep] = useState<{ done: number; total: number } | null>(null);
   /** Turns made since the last analysis, so scrambling can arm itself */
   const scrambleTurnsRef = useRef(0);
   const lastTurnAtRef = useRef(0);
+  /** One analysis at a time; the scramble watcher ticks faster than it runs */
+  const analysingRef = useRef(false);
   const [cubeState, setCubeState] = useState<CubeState>(() => cloneState(SOLVED_STATE));
   const live = useTurnAnimation();
 
@@ -127,30 +137,53 @@ export default function TrainingPage() {
   );
 
   /**
-   * First block: look at the cube as it is now and cost every block on it.
-   * There is no case to deal — your cube IS the case.
+   * Start an attempt: the clock has not run yet, and nothing you turned before
+   * now belongs to it.
+   *
+   * Clearing the move list here is the whole job. First block arms itself from
+   * analyseNow rather than from the scramble guide, and that path used to skip
+   * this — so every attempt after the first carried the previous one's turns
+   * and reported a solution several moves longer than the one you made, which
+   * in a mode about counting moves is the only number that matters.
    */
-  const analyseNow = useCallback(() => {
-    setDealing(true);
-    const blocks = analyseBlocksFromState(cubeRef.current, 2);
-    setDealing(false);
-    if (!blocks) {
-      setProblem('That cube does not read as a cube. Sync it from the top bar.');
-      return;
-    }
-    setProblem(null);
-    const next: Case = {
-      from: cloneState(cubeRef.current),
-      setup: [],
-      best: blocks[0].length,
-      solutions: blocks[0].solutions,
-      blocks,
-    };
-    caseRef.current = next;
-    setCurrent(next);
-    setReveal(false);
+  const arm = useCallback(() => {
+    armedAtRef.current = performance.now();
+    movesRef.current = [];
     setPhaseBoth('armed');
   }, []);
+
+  /**
+   * First block: look at the cube as it is now and cost every block on it.
+   * There is no case to deal — your cube IS the case.
+   *
+   * Twenty-four searches, run a block at a time so the page keeps answering.
+   */
+  const analyseNow = useCallback(async () => {
+    if (analysingRef.current) return;
+    analysingRef.current = true;
+    setDealing(true);
+    try {
+      // If your hands move again while this is running, the answer would
+      // describe a cube you no longer have. Start over rather than lie.
+      const turnsAtStart = scrambleTurnsRef.current;
+      const from = cloneState(cubeRef.current);
+      const blocks = await analyseBlocksFromStateAsync(from, 2);
+      if (scrambleTurnsRef.current !== turnsAtStart) return;
+      if (!blocks) {
+        setProblem('That cube does not read as a cube. Sync it from the top bar.');
+        return;
+      }
+      setProblem(null);
+      const next: Case = { from, setup: [], best: blocks[0].length, solutions: blocks[0].solutions, blocks };
+      caseRef.current = next;
+      setCurrent(next);
+      setReveal(false);
+      arm();
+    } finally {
+      setDealing(false);
+      analysingRef.current = false;
+    }
+  }, [arm]);
 
   const deal = useCallback(async () => {
     setReveal(false);
@@ -160,7 +193,7 @@ export default function TrainingPage() {
       caseRef.current = null;
       setCurrent(null);
       setPhaseBoth(usingCube ? 'scrambling' : 'armed');
-      if (!usingCube) analyseNow();
+      if (!usingCube) void analyseNow();
       return;
     }
     setDealing(true);
@@ -188,6 +221,33 @@ export default function TrainingPage() {
     setCurrent(next);
     setPhaseBoth(usingCube ? 'setup' : 'armed');
   }, [mode, usingCube, analyseNow]);
+
+  /**
+   * Build the block tables as soon as first block is the mode, not at the
+   * moment you stop scrambling.
+   *
+   * They are the same tables every time and cost about a second and a half of
+   * solid work to build, so doing it while you are still reading the screen
+   * costs nothing, and doing it the instant your hands come off the cube costs
+   * exactly the wrong second. Built one block at a time either way, so the page
+   * never stops answering.
+   */
+  useEffect(() => {
+    if (mode !== 'fb' || blockTablesReady()) {
+      setPrep(null);
+      return;
+    }
+    let live = true;
+    setPrep({ done: 0, total: 24 });
+    void prepareBlockTables((done, total) => {
+      if (live) setPrep({ done, total });
+    }).then(() => {
+      if (live) setPrep(null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [mode]);
 
   // Switching mode puts everything back, rather than carrying a case across
   useEffect(() => {
@@ -224,7 +284,7 @@ export default function TrainingPage() {
     const id = setInterval(() => {
       if (scrambleTurnsRef.current < 6) return;
       if (performance.now() - lastTurnAtRef.current < 1200) return;
-      analyseNow();
+      void analyseNow();
     }, 300);
     return () => clearInterval(id);
   }, [phase, analyseNow]);
@@ -245,12 +305,6 @@ export default function TrainingPage() {
     const id = setInterval(() => setThinking(true), 250);
     return () => clearInterval(id);
   }, [phase]);
-
-  const arm = useCallback(() => {
-    armedAtRef.current = performance.now();
-    movesRef.current = [];
-    setPhaseBoth('armed');
-  }, []);
 
   const finish = useCallback(
     (state: CubeState) => {
@@ -368,7 +422,12 @@ export default function TrainingPage() {
             ))}
           </div>
           <div className="flex gap-2">
-            {dealing && <span className="self-center text-[12px] text-ink-500">working out the blocks…</span>}
+            {prep && (
+              <span className="self-center text-[12px] text-ink-500">
+                getting ready… {Math.round((prep.done / prep.total) * 100)}%
+              </span>
+            )}
+            {dealing && !prep && <span className="self-center text-[12px] text-ink-500">working out the blocks…</span>}
             {phase === 'idle' ? (
               <button className="btn btn-primary !py-1 !text-[13px]" onClick={() => void deal()} disabled={dealing}>
                 Start
@@ -422,7 +481,7 @@ export default function TrainingPage() {
             animate={live.animate}
             size={170}
           />
-          <button className="btn btn-primary !py-1 !text-[13px]" onClick={analyseNow} disabled={dealing}>
+          <button className="btn btn-primary !py-1 !text-[13px]" onClick={() => void analyseNow()} disabled={dealing}>
             {dealing ? 'Reading the cube…' : 'Use it now'}
           </button>
         </section>

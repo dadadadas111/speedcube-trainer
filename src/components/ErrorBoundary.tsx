@@ -10,6 +10,7 @@
 
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { cubeLink } from '../smartcube/connection';
+import { recordCrash } from '../store/crashLog';
 
 interface Props {
   children: ReactNode;
@@ -32,6 +33,13 @@ export default class ErrorBoundary extends Component<Props, State> {
     // Put it in the connection log too, so it sits next to the cube events it
     // may well have been caused by.
     cubeLink.log.push({ t: Date.now(), kind: 'ui-error', detail: error.message });
+    // And to storage, because the first thing anyone does with this screen is
+    // press Reload — which empties the log above along with everything else.
+    recordCrash(
+      error.message,
+      `${location.hash || location.pathname}`,
+      `${error.stack ?? ''}\n${info.componentStack ?? ''}`,
+    );
   }
 
   render() {
