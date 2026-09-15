@@ -15,6 +15,7 @@ import { classifyCornerAlg } from '../analysis/cornerCase';
 import { parseAlg } from '../cube/alg';
 import { summariseCases, suggestCases, trendAround, type Encounter } from '../analysis/cmllStats';
 import { formatSeconds } from '../analysis/stats';
+import CmllDiagram from './CmllDiagram';
 
 const REASON: Record<string, { label: string; tone: string; why: string }> = {
   unseen: { label: 'never met', tone: 'text-warn', why: 'You have not run into this one yet' },
@@ -43,11 +44,11 @@ export default function CmllCaseStats({
    * in a solve deserves a name whether or not you have been there yet.
    */
   const named = useMemo(() => {
-    const m = new Map<string, { family: string; name: string }>();
+    const m = new Map<string, { family: string; name: string; alg: string }>();
     for (const a of [...SEED_ALGS.filter((x) => x.group === 'CMLL'), ...algs]) {
       try {
         const c = classifyCornerAlg(parseAlg(a.alg));
-        if (c) m.set(c.full, { family: a.family, name: a.name });
+        if (c) m.set(c.full, { family: a.family, name: a.name, alg: a.alg });
       } catch {
         /* an alg that will not parse simply names nothing */
       }
@@ -101,7 +102,8 @@ export default function CmllCaseStats({
           {suggestions.length > 0 && (
             <ul className="mt-3 flex flex-col gap-1.5">
               {suggestions.map((s) => (
-                <li key={s.full} className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
+                <li key={s.full} className="flex flex-wrap items-center gap-x-2 text-[13px]">
+                  <CmllDiagram alg={named.get(s.full)?.alg} size={38} className="shrink-0" />
                   <span className="font-semibold text-ink-100">{label(s.full)}</span>
                   <span className={REASON[s.reason].tone}>{REASON[s.reason].label}</span>
                   <span className="text-ink-500">{REASON[s.reason].why}</span>
@@ -128,6 +130,7 @@ export default function CmllCaseStats({
           <table className="data">
             <thead>
               <tr>
+                <th className="w-px" aria-label="Diagram" />
                 <th>Case</th>
                 <th className="text-right">Met</th>
                 <th className="text-right">Look</th>
@@ -140,6 +143,11 @@ export default function CmllCaseStats({
             <tbody>
               {stats.map((s) => (
                 <tr key={s.full}>
+                  {/* The name says which case you were slow at; this says what
+                      you were looking at, which is what recognition actually is */}
+                  <td className="py-1 pr-0">
+                    <CmllDiagram alg={named.get(s.full)?.alg} size={42} />
+                  </td>
                   <td className="whitespace-nowrap">{label(s.full)}</td>
                   <td className="tnum text-right">{s.count}</td>
                   {/* Looking and turning side by side, never added up: which of

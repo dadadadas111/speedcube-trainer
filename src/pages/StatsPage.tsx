@@ -40,6 +40,14 @@ export default function StatsPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [window, setWindow] = useState<(typeof WINDOWS)[number]['id']>('30d');
   const [showSessions, setShowSessions] = useState(false);
+  /**
+   * Which part of the numbers is on screen.
+   *
+   * All of it at once was a page you scrolled past rather than read — the
+   * per-case table, which is the part worth acting on, sat below four charts.
+   * Four short pages beat one long one when they answer different questions.
+   */
+  const [tab, setTab] = useState<'overview' | 'steps' | 'cmll' | 'advice'>('overview');
 
   useEffect(() => {
     void db.sessions.orderBy('createdAt').toArray().then(setSessions);
@@ -194,6 +202,26 @@ export default function StatsPage() {
         </div>
       </div>
 
+      <div className="flex gap-1 overflow-x-auto">
+        {([
+          ['overview', 'Overview'],
+          ['steps', 'Steps'],
+          ['cmll', 'CMLL'],
+          ['advice', 'What to work on'],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={
+              'shrink-0 rounded-md border px-3 py-1 text-[13px] transition-colors ' +
+              (tab === id ? 'border-cube-blue bg-ink-800 text-ink-100' : 'border-ink-700 text-ink-400')
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {scope === 'all' && sessions.length > 1 && (
         <section className="panel px-4 py-3">
           <button
@@ -231,6 +259,10 @@ export default function StatsPage() {
         </section>
       )}
 
+      {/* The headline numbers belong to the overview. Repeated above the
+          per-case table they were a quarter of a phone's screen saying nothing
+          about the thing being read. */}
+      {tab === 'overview' && (
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label="Solves" value={String(solves.length)} />
         <Kpi label="Best" value={formatTime(finite.length ? Math.min(...finite) : NaN)} />
@@ -239,8 +271,9 @@ export default function StatsPage() {
         <Kpi label="Best ao12" value={formatTime(bestAverage(times, 12))} />
         <Kpi label="Std dev" value={formatTime(stdevOf(times))} />
       </section>
+      )}
 
-      {insights.length > 0 && (
+      {tab === 'advice' && insights.length > 0 && (
         <section className="panel p-5">
           <h2 className="text-base font-semibold">What to work on</h2>
           <ul className="mt-3 flex flex-col gap-3">
@@ -257,6 +290,7 @@ export default function StatsPage() {
         </section>
       )}
 
+      {tab === 'overview' && (
       <section className="panel p-5">
         <h2 className="mb-4 text-base font-semibold">Time across solves</h2>
         <ResponsiveContainer width="100%" height={260}>
@@ -271,8 +305,9 @@ export default function StatsPage() {
           </LineChart>
         </ResponsiveContainer>
       </section>
+      )}
 
-      {steps.length > 0 && (
+      {tab === 'steps' && steps.length > 0 && (
         <>
           <section className="panel p-5">
             <h2 className="text-base font-semibold">Where the time goes</h2>
@@ -355,8 +390,9 @@ export default function StatsPage() {
         </>
       )}
 
-      <CmllCaseStats encounters={encounters} splitAt={splitAt} />
+      {tab === 'cmll' && <CmllCaseStats encounters={encounters} splitAt={splitAt} />}
 
+      {tab === 'overview' && (
       <section className="panel p-5">
         <h2 className="mb-4 text-base font-semibold">Time distribution</h2>
         <ResponsiveContainer width="100%" height={190}>
@@ -370,6 +406,7 @@ export default function StatsPage() {
           </BarChart>
         </ResponsiveContainer>
       </section>
+      )}
     </div>
   );
 }
