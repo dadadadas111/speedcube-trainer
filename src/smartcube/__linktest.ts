@@ -8,6 +8,7 @@ import { CommandBudget, notifyAll } from './dispatch';
 import { ResetGesture } from './gesture';
 import { macKeysFor } from './mac';
 import { readConnectFailure } from './failure';
+import { SharedListener } from './shared';
 import { DriverGuard, isDriverLike, DEFAULT_LIMITS } from './driverGuard';
 
 let fails = 0;
@@ -310,6 +311,42 @@ const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.lo
   check('a new connection forgets the throttling', g.throttled === 0);
   check('and forgets what was dropped', g.dropped === 0);
   check('and lets the first write straight out', g.judge(driver, 10) === 'allow');
+}
+
+/* ---- One listener however many things are listening ---- */
+{
+  let attached = 0, detached = 0;
+  const shared = new SharedListener(() => {
+    attached++;
+    return () => { detached++; };
+  });
+  check('nothing is attached until asked', !shared.active && attached === 0);
+
+  const a = shared.hold();
+  check('the first holder attaches it', shared.active && attached === 1);
+  const b = shared.hold();
+  // This is the bug it exists for: two components using the keyboard cube at
+  // once turned it twice per key press
+  check('a second holder does NOT attach it again', attached === 1, String(attached));
+  check('and both are counted', shared.count === 2);
+
+  a();
+  check('one letting go keeps it attached', shared.active && detached === 0);
+  b();
+  check('the last one detaches it', !shared.active && detached === 1);
+
+  // A React cleanup that runs twice must not take somebody else's listener away
+  const c = shared.hold();
+  const d = shared.hold();
+  c(); c(); c();
+  check('releasing the same hold again changes nothing', shared.count === 1, String(shared.count));
+  check('and it is still attached', shared.active);
+  d();
+  check('now it is gone', !shared.active && detached === 2);
+
+  // And it can be taken up again afterwards
+  shared.hold();
+  check('holding again re-attaches', shared.active && attached === 3, String(attached));
 }
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

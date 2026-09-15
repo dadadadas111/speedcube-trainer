@@ -40,9 +40,10 @@ import { useCubeInput } from '../smartcube/useCubeInput';
 import { cubeLink, type LiveMove } from '../smartcube/connection';
 import { useTurnAnimation } from '../components/useTurnAnimation';
 import CubeView from '../components/CubeView';
+import ProSolve from '../components/ProSolve';
 import ScrambleGuide from '../components/ScrambleGuide';
 
-type Mode = 'fb' | 'eolr' | '4c';
+type Mode = 'fb' | 'eolr' | '4c' | 'pro';
 /**
  * 'setup' is turning the cube into the case. First block has no such step —
  * you scramble it yourself, which is the only way the mode can run case after
@@ -55,6 +56,7 @@ const MODES: { id: Mode; name: string; blurb: string }[] = [
   { id: 'fb', name: 'First block', blurb: 'Scramble it yourself, then find the shortest 1x2x3' },
   { id: 'eolr', name: 'EOLR', blurb: 'Orient the six edges and place UL/UR' },
   { id: '4c', name: 'LSE 4c', blurb: 'Finish the M slice' },
+  { id: 'pro', name: 'Solve like a pro', blurb: "A real solve, step by step, on your own cube" },
 ];
 
 interface Case {
@@ -421,7 +423,8 @@ export default function TrainingPage() {
               </button>
             ))}
           </div>
-          <div className="flex gap-2">
+          {/* Following a real solve deals itself: you pick one from the list */}
+          <div className={'flex gap-2 ' + (mode === 'pro' ? 'hidden' : '')}>
             {prep && (
               <span className="self-center text-[12px] text-ink-500">
                 getting ready… {Math.round((prep.done / prep.total) * 100)}%
@@ -451,10 +454,14 @@ export default function TrainingPage() {
             )}
           </div>
         </div>
-        <p className="mt-2 text-[13px] text-ink-500">{MODES.find((m) => m.id === mode)!.blurb}</p>
+        {mode !== 'pro' && (
+          <p className="mt-2 text-[13px] text-ink-500">{MODES.find((m) => m.id === mode)!.blurb}</p>
+        )}
       </section>
 
-      {!usingCube && (
+      {mode === 'pro' && <ProSolve usingCube={usingCube} keyboard={settings.keyboardCube} />}
+
+      {mode !== 'pro' && !usingCube && (
         <section className="panel px-4 py-4 sm:px-5">
           <p className="max-w-[60ch] text-sm text-ink-400">
             Without a cube the app can still deal cases and show you the shortest solution, but it cannot tell you
@@ -464,13 +471,13 @@ export default function TrainingPage() {
         </section>
       )}
 
-      {problem && (
+      {mode !== 'pro' && problem && (
         <section className="panel px-4 py-4 sm:px-5">
           <p className="text-sm text-warn">{problem}</p>
         </section>
       )}
 
-      {phase === 'scrambling' && (
+      {mode !== 'pro' && phase === 'scrambling' && (
         <section className="panel flex flex-col items-center gap-4 px-4 py-6 sm:px-5">
           <p className="text-lg font-semibold text-cube-blue">Scramble your cube</p>
           <p className="max-w-[46ch] text-center text-[13px] text-ink-400">
@@ -487,7 +494,7 @@ export default function TrainingPage() {
         </section>
       )}
 
-      {current && phase !== 'scrambling' && (
+      {mode !== 'pro' && current && phase !== 'scrambling' && (
         <section className="panel flex flex-col items-center gap-4 px-4 py-5 sm:px-5">
           {phase === 'setup' && current.setup.length > 0 && (
             <div className="w-full">
@@ -539,7 +546,7 @@ export default function TrainingPage() {
         </section>
       )}
 
-      {last && (
+      {mode !== 'pro' && last && (
         <section className="panel px-4 py-4 sm:px-5">
           {last.chose && (
             <p className="mb-3 flex items-center justify-center gap-2 text-[13px] text-ink-400">
@@ -575,7 +582,7 @@ export default function TrainingPage() {
         </section>
       )}
 
-      {summary && summary.count > 1 && (
+      {mode !== 'pro' && summary && summary.count > 1 && (
         <section className="panel px-4 py-3.5 sm:px-5">
           <div className="flex flex-wrap items-baseline justify-center gap-x-8 gap-y-2 text-[13px]">
             <span className="text-ink-400">
