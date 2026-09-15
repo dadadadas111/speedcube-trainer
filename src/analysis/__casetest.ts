@@ -1,14 +1,19 @@
 import { parseAlg, invertAlg } from '../cube/alg';
-import { classifyCornerAlg, describeFamily } from './cornerCase';
+import { classifyCornerAlg, caseSignature, describeFamily } from './cornerCase';
 import { SEED_ALGS } from '../data/seedAlgs';
 
 let fails = 0;
 const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.log('FAIL ' + n + (x ? '  <' + x + '>' : '')); } else console.log('ok   ' + n); };
 const cls = (a: string) => classifyCornerAlg(parseAlg(a));
 
-// 1. An AUF BEFORE the algorithm is the same case (turn U, then do the same thing).
-//    An AUF AFTER it is a different case: CMLL's goal is four corners placed
-//    correctly relative to the blocks, so a trailing U leaves it unfinished.
+// 1. An AUF at either end is the same case, and both have to be divided out.
+//    Before is obvious: turn U, then do the same thing. After is the one that
+//    used to be got wrong here — a trailing U was treated as leaving the case
+//    unfinished, when the last six edges turn the top layer anyway, so corners
+//    "solved but rotated" are solved. Dividing out only one of the two split
+//    the forty-two cases into a hundred and sixty-two, which was invisible
+//    while only algorithms were being classified and showed up the moment a
+//    case read off a real solve had to match one.
 {
   const base = cls("R U R' U R U2 R'")!;
   check('Sune classifies', !!base && base.cornersOnly && base.preservesBlocks);
@@ -16,8 +21,8 @@ const cls = (a: string) => classifyCornerAlg(parseAlg(a));
   check('AUF before the algorithm -> same case',
     preAuf.every((v) => cls(v)?.full === base.full), preAuf.map((v) => cls(v)?.full).join(' '));
   const postAuf = ["R U R' U R U2 R' U", "R U R' U R U2 R' U2"];
-  check('AUF after the algorithm -> different case',
-    postAuf.every((v) => cls(v)?.full !== base.full), postAuf.map((v) => cls(v)?.full).join(' '));
+  check('AUF after the algorithm -> same case too',
+    postAuf.every((v) => cls(v)?.full === base.full), postAuf.map((v) => cls(v)?.full).join(' '));
   check('but still the same family (corner orientations unchanged)',
     [...preAuf, ...postAuf].every((v) => cls(v)?.family === base.family));
 }
@@ -109,6 +114,43 @@ const cls = (a: string) => classifyCornerAlg(parseAlg(a));
   // And the eight headings are the eight ways the corners can be oriented
   check('there are eight families', byName.size === 8, String(byName.size));
   check('O means nothing needs turning', [...(byName.get('O') ?? [])][0] === '0000');
+}
+
+// 8. The whole corner state space, counted. This is what pins the two AUFs
+//    being divided out: get it wrong in either direction and the number moves.
+{
+  const perms: number[][] = [];
+  const build = (left: number[], acc: number[]) => {
+    if (!left.length) { perms.push([...acc]); return; }
+    for (const x of left) build(left.filter((y) => y !== x), [...acc, x]);
+  };
+  build([0, 1, 2, 3], []);
+
+  const signatures = new Set<string>();
+  const families = new Set<string>();
+  let states = 0;
+  for (const pi of perms) {
+    for (let t = 0; t < 81; t++) {
+      const tw = [0, 1, 2, 3].map((i) => Math.floor(t / 3 ** i) % 3);
+      // A cube with its bottom corners solved has its top four summing to zero
+      if ((tw[0] + tw[1] + tw[2] + tw[3]) % 3 !== 0) continue;
+      states++;
+      const sig = caseSignature([0, 1, 2, 3].map((i) => ({ offset: (pi[i] - i + 4) % 4, twist: tw[i] })));
+      signatures.add(sig.full);
+      families.add(sig.family);
+    }
+  }
+  check('there are 648 corner states', states === 648, String(states));
+  check('which fall into 43 cases: the 42 of CMLL, plus solved', signatures.size === 43, String(signatures.size));
+  check('and eight orientation families', families.size === 8, String(families.size));
+
+  // So the library covering 42 distinct ones is complete coverage, not a count
+  const library = new Set(
+    SEED_ALGS.filter((a) => a.group === 'CMLL').map((a) => cls(a.alg)!.full),
+  );
+  const solved = caseSignature([0, 1, 2, 3].map(() => ({ offset: 0, twist: 0 }))).full;
+  const missing = [...signatures].filter((x) => x !== solved && !library.has(x));
+  check('the library covers every case there is', missing.length === 0, missing.join(' '));
 }
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);

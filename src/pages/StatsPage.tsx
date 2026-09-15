@@ -7,9 +7,11 @@ import {
 /** Data charts do not need an entrance animation — it only delays reading. */
 const NO_ANIM = { isAnimationActive: false } as const;
 import { useApp } from '../store/app';
-import { db, type Solve } from '../store/db';
-import { analyzeMany } from '../analysis/pipeline';
+import { db, type Solve, type Session } from '../store/db';
+import { analyzeSolveRecord } from '../analysis/pipeline';
 import { aggregateSteps, buildInsights } from '../analysis/recommend';
+import { cmllEncounterOf } from '../analysis/cmllStats';
+import CmllCaseStats from '../components/CmllCaseStats';
 import { averageOf, bestAverage, effectiveTime, formatTime, meanOf, rollingAverage, stdevOf } from '../analysis/stats';
 import { stepColor } from '../components/palette';
 
@@ -24,26 +26,85 @@ const tooltipStyle = {
   color: '#e7edf3',
 };
 
+/** How far back "lately" reaches, for comparing against before. */
+const WINDOWS = [
+  { id: '7d', label: '7 days', ms: 7 * 864e5 },
+  { id: '30d', label: '30 days', ms: 30 * 864e5 },
+  { id: '90d', label: '90 days', ms: 90 * 864e5 },
+] as const;
+
 export default function StatsPage() {
-  const { sessionId, settings, revision } = useApp();
+  const { sessionId, settings, revision, bump } = useApp();
   const [solves, setSolves] = useState<Solve[]>([]);
   const [scope, setScope] = useState<'session' | 'all'>('session');
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [window, setWindow] = useState<(typeof WINDOWS)[number]['id']>('30d');
+  const [showSessions, setShowSessions] = useState(false);
+
+  useEffect(() => {
+    void db.sessions.orderBy('createdAt').toArray().then(setSessions);
+  }, [revision]);
+
+  /** Sessions deliberately left out of the numbers. */
+  const excluded = useMemo(
+    () => new Set(sessions.filter((x) => x.countsForStats === false).map((x) => x.id)),
+    [sessions],
+  );
 
   useEffect(() => {
     const load = async () => {
       const rows =
         scope === 'session'
           ? await db.solves.where('sessionId').equals(sessionId).sortBy('date')
-          : await db.solves.orderBy('date').toArray();
+          : // A session for deliberately slow solving is real practice and worth
+            // keeping, but averaged in with timed solves it describes neither
+            (await db.solves.orderBy('date').toArray()).filter((r) => !excluded.has(r.sessionId));
       setSolves(rows);
     };
     void load();
-  }, [sessionId, revision, scope]);
+  }, [sessionId, revision, scope, excluded]);
+
+  const splitAt = useMemo(() => Date.now() - WINDOWS.find((w) => w.id === window)!.ms, [window]);
 
   const times = useMemo(() => solves.map(effectiveTime), [solves]);
-  const analyses = useMemo(() => analyzeMany(solves, settings), [solves, settings]);
+  /**
+   * Each solve with its reading, kept side by side.
+   *
+   * analyzeMany drops the ones it cannot read, so its result cannot be indexed
+   * against the solves it came from — pairing them by position would file every
+   * CMLL under the wrong date and the wrong session.
+   */
+  const paired = useMemo(
+    () =>
+      solves.map((s) => ({
+        solve: s,
+        a: s.penalty === 'DNF' ? null : analyzeSolveRecord(s, settings),
+      })),
+    [solves, settings],
+  );
+  const analyses = useMemo(
+    () => paired.map((p) => p.a).filter((a): a is NonNullable<typeof a> => !!a && a.complete),
+    [paired],
+  );
   const steps = useMemo(() => aggregateSteps(analyses), [analyses]);
   const insights = useMemo(() => buildInsights(analyses), [analyses]);
+
+  /**
+   * Every CMLL met in these solves.
+   *
+   * Read back out of the solves rather than stored beside them, so a change to
+   * how a solve is read changes the history too and there is no second copy to
+   * drift.
+   */
+  const encounters = useMemo(
+    () =>
+      paired.flatMap(({ solve, a }) => {
+        if (!a || !a.complete) return [];
+        const e = cmllEncounterOf(a, solve.date, solve.sessionId);
+        return e ? [e] : [];
+      }),
+    [paired],
+  );
 
   const ao5s = useMemo(() => rollingAverage(times, 5), [times]);
   const ao12s = useMemo(() => rollingAverage(times, 12), [times]);
@@ -112,10 +173,63 @@ export default function StatsPage() {
             All
           </button>
         </div>
-        <p className="text-[13px] text-ink-400">
-          {analyses.length}/{solves.length} solves with move data
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex overflow-hidden rounded-md border border-ink-700">
+            {WINDOWS.map((w) => (
+              <button
+                key={w.id}
+                className={`px-2 py-0.5 text-[12px] transition-colors ${
+                  window === w.id ? 'bg-ink-700 text-ink-100' : 'text-ink-500'
+                }`}
+                onClick={() => setWindow(w.id)}
+                title="What counts as lately, when comparing against before"
+              >
+                {w.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[13px] text-ink-400">
+            {analyses.length}/{solves.length} solves with move data
+          </p>
+        </div>
       </div>
+
+      {scope === 'all' && sessions.length > 1 && (
+        <section className="panel px-4 py-3">
+          <button
+            className="text-[13px] text-ink-400 underline underline-offset-2"
+            onClick={() => setShowSessions((v) => !v)}
+          >
+            {excluded.size === 0
+              ? 'All sessions counted'
+              : `${excluded.size} session${excluded.size > 1 ? 's' : ''} left out`}
+          </button>
+          {showSessions && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {sessions.map((x) => {
+                const on = x.countsForStats !== false;
+                return (
+                  <button
+                    key={x.id}
+                    onClick={() => {
+                      if (x.id == null) return;
+                      void db.sessions.update(x.id, { countsForStats: !on }).then(bump);
+                    }}
+                    className={
+                      'rounded-full border px-2.5 py-1 text-[13px] transition-colors ' +
+                      (on
+                        ? 'border-cube-blue bg-[color-mix(in_srgb,var(--color-cube-blue)_18%,transparent)] text-ink-100'
+                        : 'border-ink-700 text-ink-500 line-through')
+                    }
+                  >
+                    {x.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Kpi label="Solves" value={String(solves.length)} />
@@ -240,6 +354,8 @@ export default function StatsPage() {
           </div>
         </>
       )}
+
+      <CmllCaseStats encounters={encounters} splitAt={splitAt} />
 
       <section className="panel p-5">
         <h2 className="mb-4 text-base font-semibold">Time distribution</h2>

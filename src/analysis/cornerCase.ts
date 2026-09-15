@@ -11,7 +11,7 @@
  * is taken.
  */
 
-import { SOLVED_STATE, applyMoves, PIECES, groupSolved, type CubeState } from '../cube/cube';
+import { SOLVED_STATE, applyMoves, PIECES, groupSolved, recolor, type CubeState } from '../cube/cube';
 import { ROTATIONS, FACELET_NORMAL, faceletsOfCubie, type Vec3 } from '../cube/geometry';
 import { invertAlg } from '../cube/alg';
 
@@ -71,28 +71,73 @@ function readCorners(s: CubeState): { offset: number; twist: number }[] | null {
 }
 
 /**
- * The smallest signature across the four U-layer rotations.
+ * The smallest signature across both of the U turns that are free.
  *
- * One U turn does two things at once: it cycles the corner slots, AND it drops
- * every piece's offset by one (a piece moving to the next slot is one step
- * closer to home). Miss that second part and two spellings of the same case
- * produce two different signatures.
+ * CMLL is counted up to an AUF at each end, which is why there are forty-two
+ * of them and not a hundred and sixty-two, and both have to be divided out or
+ * the same case read off two cubes gives two different answers.
+ *
+ * Turning U BEFORE looking cycles the corner slots and, at the same time,
+ * drops every piece's offset by one — a piece moving to the next slot is one
+ * step closer to home. Miss that second half and two spellings of one case come
+ * out different. That is `k`.
+ *
+ * Turning U AFTER the algorithm is free as well: the last six edges turn the
+ * top layer anyway, so corners "solved but rotated" are solved. That moves
+ * every home position together, so it shifts all four offsets by the same
+ * amount and leaves the slots and the twists alone. That is `m`, and leaving it
+ * out was why a case met in a real solve could fail to match any algorithm in
+ * the library — the algorithm had been read at one final angle and the solve
+ * arrived at another.
  */
-function canonicalize(corners: { offset: number; twist: number }[]): { family: string; full: string } {
+export function caseSignature(corners: { offset: number; twist: number }[]): { family: string; full: string } {
   let bestFull = '';
   let bestFamily = '';
   for (let k = 0; k < 4; k++) {
-    let full = '';
     let family = '';
-    for (let i = 0; i < 4; i++) {
-      const src = corners[(i - k + 4) % 4];
-      full += `${(src.offset - k + 4) % 4}${src.twist}`;
-      family += String(src.twist);
-    }
-    if (bestFull === '' || full < bestFull) bestFull = full;
+    for (let i = 0; i < 4; i++) family += String(corners[(i - k + 4) % 4].twist);
     if (bestFamily === '' || family < bestFamily) bestFamily = family;
+    for (let m = 0; m < 4; m++) {
+      let full = '';
+      for (let i = 0; i < 4; i++) {
+        const src = corners[(i - k + 4) % 4];
+        full += `${(src.offset - m + 4) % 4}${src.twist}`;
+      }
+      if (bestFull === '' || full < bestFull) bestFull = full;
+    }
   }
   return { family: bestFamily, full: bestFull };
+}
+
+/**
+ * Which case the four top corners are showing, on a cube in your hands.
+ *
+ * This is the same reading as for an algorithm, done from the other end: the
+ * corners of a real solve rather than of a state conjured by running an
+ * algorithm backwards. It is what lets a solve you just did be filed under the
+ * CMLL case you actually met.
+ *
+ * The orientation is worked out rather than assumed, because nobody holds the
+ * cube the way the app happens to draw it. Once both blocks are built they pin
+ * the cube completely — there is exactly one way to be holding it with the
+ * first block bottom-left and the second bottom-right — so the rotation that
+ * puts them there is the frame the corners are read in. No blocks, no frame,
+ * and nothing to say: the position is not a CMLL one.
+ *
+ * `colors` is the solver's own colour scheme, since the blocks can be built in
+ * any colours at all and the reading has to survive that.
+ */
+export function classifyCornerState(state: CubeState, colors?: Uint8Array): CornerCase | null {
+  const s = colors ? recolor(state, colors) : state;
+  const rot = ROTATIONS.find(
+    (r) => groupSolved(s, r, PIECES.FB) && groupSolved(s, r, PIECES.SB),
+  );
+  if (!rot) return null;
+  const viewed = new Uint8Array(54);
+  for (let i = 0; i < 54; i++) viewed[i] = s[rot[i]];
+  const corners = readCorners(viewed);
+  if (!corners) return null;
+  return { ...caseSignature(corners), preservesBlocks: true, cornersOnly: true };
 }
 
 /**
@@ -114,7 +159,7 @@ export function classifyCornerAlg(alg: string[]): CornerCase | null {
   const cornersOnly = untouched.every((i) => caseState[i] === Math.floor(i / 9));
 
   return {
-    ...canonicalize(corners),
+    ...caseSignature(corners),
     preservesBlocks: blocks,
     cornersOnly,
   };

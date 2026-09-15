@@ -12,6 +12,14 @@ export interface Session {
   name: string;
   method: MethodName | 'auto';
   createdAt: number;
+  /**
+   * Whether this session's solves belong in the statistics.
+   *
+   * A session for deliberately slow, move-efficient solving is real practice
+   * and worth keeping, but averaging it in with timed solves describes neither.
+   * Missing means yes, so nothing already recorded has to be touched.
+   */
+  countsForStats?: boolean;
 }
 
 export interface Solve {
@@ -133,6 +141,20 @@ class TrainerDB extends Dexie {
         const wanted = SEED_ALGS.filter((a) => a.group === 'CMLL' && !have.has(a.alg));
         if (wanted.length) await algs.bulkAdd(wanted.map((a) => ({ ...a, createdAt: Date.now() })));
       });
+    /**
+     * Sessions can be left out of the statistics.
+     *
+     * Nothing is written by this upgrade: an absent flag already means "counts",
+     * which is what every session that existed before was doing. Only the ones
+     * you deliberately turn off ever get the field.
+     */
+    this.version(4).stores({
+      sessions: '++id, name, createdAt',
+      solves: '++id, sessionId, date',
+      algs: '++id, group, family, name, createdAt',
+      reps: '++id, algId, date',
+      settings: 'key',
+    });
   }
 }
 
