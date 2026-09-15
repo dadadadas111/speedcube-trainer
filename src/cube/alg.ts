@@ -101,7 +101,18 @@ export function simplifyAlg(moves: string[]): string[] {
  * Reading moves in a different frame
  * ------------------------------------------------------------------ */
 
-const NOTATION = ['U', 'R', 'F', 'D', 'L', 'B', 'M', 'E', 'S'].flatMap((f) => [f, f + "'", f + '2']);
+/**
+ * Every turn that can be renamed, which has to include the wide ones.
+ *
+ * Faces and slices alone left `moveInFrame` unable to find `r` in its table, so
+ * it returned it unchanged — a silent identity that quietly produced a sequence
+ * which no longer solved the cube. Nothing about the result looked wrong.
+ * Widening this is safe: a face turn only ever conjugates to a face turn, a
+ * slice to a slice and a wide to a wide, so no existing name can be taken.
+ */
+const NOTATION = ['U', 'R', 'F', 'D', 'L', 'B', 'M', 'E', 'S', 'r', 'l', 'u', 'd', 'f', 'b'].flatMap(
+  (f) => [f, f + "'", f + '2'],
+);
 const ROTATION_NAMES = ['x', "x'", 'x2', 'y', "y'", 'y2', 'z', "z'", 'z2'];
 const permKey = (p: Uint8Array) => p.join(',');
 const BY_PERM = new Map<string, string>();

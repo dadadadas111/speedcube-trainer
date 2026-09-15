@@ -17,6 +17,7 @@ import { PRO_SOLVES, type ProSolve as Solve } from '../data/proSolves';
 import { parseAlg, formatAlg } from '../cube/alg';
 import { applyMoves, SOLVED_STATE, cloneState, isSolved, type CubeState } from '../cube/cube';
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
+import { followSteps, followMoves } from '../analysis/followSolve';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import { cubeLink } from '../smartcube/connection';
 import { useTurnAnimation } from './useTurnAnimation';
@@ -42,6 +43,8 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
   const cubeRef = useRef<CubeState>(cloneState(SOLVED_STATE));
   const stepRef = useRef(0);
   const solveRef = useRef<Solve | null>(null);
+  /** The prepared steps, for the handlers that must not depend on a render */
+  const stepsRef = useRef<ReturnType<typeof followSteps>>([]);
   const startedRef = useRef(0);
   const [tookMs, setTookMs] = useState(0);
 
@@ -56,9 +59,17 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
     [who],
   );
 
-  /** Their solution, step by step, with the moves parsed once. */
+  /**
+   * Their solution, ready to be followed.
+   *
+   * Rotations come out and the turns after them are rewritten into the frame
+   * the cube reports in — a smart cube cannot see you pick it up and turn it
+   * round, so after an x' every move they wrote disagrees with every move the
+   * cube says, and the guide waits for a turn that will never arrive under that
+   * name. `hold` carries the rotation to be shown instead of waited for.
+   */
   const steps = useMemo(
-    () => (solve ? solve.steps.map((s) => ({ label: s.label, moves: parseAlg(s.moves) })) : []),
+    () => (solve ? followSteps(solve.steps.map((s) => ({ label: s.label, moves: parseAlg(s.moves) }))) : []),
     [solve],
   );
 
@@ -74,6 +85,14 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
     out.push(s);
     return out;
   }, [solve, steps]);
+
+  /** Their whole solution as the cube will report it, for the summary. */
+  const allMoves = useMemo(() => followMoves(steps), [steps]);
+
+  // The handlers run inside the cube's event stream and cannot wait for a render
+  useEffect(() => {
+    stepsRef.current = steps;
+  }, [steps]);
 
   /**
    * Start on a solve: apply their scramble first.
@@ -98,15 +117,14 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
     const s = solveRef.current;
     if (!s) return;
     const next = stepRef.current + 1;
-    if (next >= s.steps.length) {
+    if (next >= stepsRef.current.length) {
       setTookMs(performance.now() - startedRef.current);
       setPhaseBoth('done');
       return;
     }
     stepRef.current = next;
     setStepIndex(next);
-    const moves = parseAlg(s.steps[next].moves);
-    const tracker = new ScrambleTracker(moves, cloneState(cubeRef.current));
+    const tracker = new ScrambleTracker(stepsRef.current[next].moves, cloneState(cubeRef.current));
     trackerRef.current = tracker;
     setProgress(tracker.update(cubeRef.current));
   }, []);
@@ -118,7 +136,7 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
     startedRef.current = performance.now();
     stepRef.current = 0;
     setStepIndex(0);
-    const tracker = new ScrambleTracker(parseAlg(s.steps[0].moves), cloneState(cubeRef.current));
+    const tracker = new ScrambleTracker(stepsRef.current[0].moves, cloneState(cubeRef.current));
     trackerRef.current = tracker;
     setProgress(tracker.update(cubeRef.current));
     setPhaseBoth('following');
@@ -167,7 +185,7 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
   );
 
   const current = steps[stepIndex];
-  const totalMoves = useMemo(() => steps.reduce((a, s) => a + s.moves.length, 0), [steps]);
+  const totalMoves = allMoves.length;
 
   if (phase === 'pick' || !solve) {
     return (
@@ -264,6 +282,13 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
         <>
           <p className="text-[13px] text-cube-blue">Their scramble — apply it to your cube</p>
           <ScrambleGuide moves={parseAlg(solve.scramble)} progress={progress} />
+          {/* Said here as well as on the step, because how they picked the cube
+              up is the first thing you need and the easiest thing to miss */}
+          {steps[0]?.hold.length > 0 && (
+            <p className="text-[12px] text-ink-500">
+              Then hold it as they did: <span className="font-mono text-warn">({steps[0].hold.join(' ')})</span>
+            </p>
+          )}
         </>
       )}
 
@@ -277,7 +302,24 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
               step {stepIndex + 1} of {steps.length}
             </p>
           </div>
-          <ScrambleGuide moves={current.moves} progress={progress} />
+
+          {/* How to be holding it, in brackets and never waited for: a
+              whole-cube rotation turns nothing, so there is no way to watch you
+              do it — and waiting was what left the guide stuck on an x'. */}
+          {current.hold.length > 0 && (
+            <p className="text-[13px] text-warn">
+              Hold it their way first: <span className="font-mono">({current.hold.join(' ')})</span>
+            </p>
+          )}
+
+          {/* Their move names, not the cube's. You do what they wrote; the app
+              watches for what the cube will say instead, which after a rotation
+              is a different letter for the same physical turn. */}
+          {current.written.length > 0 ? (
+            <ScrambleGuide moves={current.written} progress={progress} />
+          ) : (
+            <p className="text-[13px] text-ink-400">Nothing to turn — just the rotation above.</p>
+          )}
         </>
       )}
 
@@ -292,8 +334,13 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
           <ul className="mt-1 flex flex-col gap-0.5">
             {steps.map((s, i) => (
               <li key={i} className="flex items-baseline gap-2 text-[13px]">
-                <span className="w-24 shrink-0 text-ink-400">{s.label}</span>
-                <span className="font-mono text-ink-200">{formatAlg(s.moves)}</span>
+                <span className="w-28 shrink-0 truncate text-ink-400" title={s.label}>
+                  {s.label}
+                </span>
+                <span className="font-mono text-ink-200">
+                  {s.hold.length > 0 && <span className="text-warn">({s.hold.join(' ')}) </span>}
+                  {formatAlg(s.written)}
+                </span>
                 <span className="tnum ml-auto text-[12px] text-ink-500">{s.moves.length}</span>
               </li>
             ))}
@@ -326,7 +373,12 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
         <CubeView state={atStep[stepIndex] ?? SOLVED_STATE} size={170} className="self-center" />
       )}
 
-      {phase === 'following' && isSolved(cubeState) && <p className="text-[12px] text-good">Solved.</p>}
+      {/* Worth saying at the end as well as during: their solution rewritten
+          into your cube's frame finishes in a different ORIENTATION, so "it
+          looks solved" and "it is solved" are worth confirming. */}
+      {(phase === 'following' || phase === 'done') && isSolved(cubeState) && (
+        <p className="text-center text-[13px] text-good">Solved.</p>
+      )}
     </section>
   );
 }
