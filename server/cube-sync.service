@@ -1,0 +1,31 @@
+[Unit]
+Description=Speedcube trainer sync store
+After=network.target
+
+[Service]
+Type=simple
+User=cubesync
+Group=cubesync
+WorkingDirectory=/opt/cube-sync
+Environment=SYNC_HOST=127.0.0.1
+Environment=SYNC_PORT=8788
+Environment=SYNC_DB=/opt/cube-sync/data.db
+EnvironmentFile=/opt/cube-sync/sync.env
+ExecStart=/usr/bin/python3 /opt/cube-sync/sync.py
+Restart=always
+RestartSec=3
+
+# Its own directory, a loopback port, and nothing else
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/cube-sync
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

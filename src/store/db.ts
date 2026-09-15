@@ -7,7 +7,20 @@ import { SEED_ALGS, RETIRED_CMLL_ALGS } from '../data/seedAlgs';
 
 export type Penalty = 'none' | '+2' | 'DNF';
 
-export interface Session {
+/**
+ * What every record that syncs carries.
+ *
+ * `uid` is the identity that means the same thing on two devices — the local
+ * `id` is an auto-increment and would collide the moment a phone and a laptop
+ * both recorded a solve. `updatedAt` is how a merge decides which of two
+ * versions is the newer intention.
+ */
+export interface Synced {
+  uid?: string;
+  updatedAt?: number;
+}
+
+export interface Session extends Synced {
   id?: number;
   name: string;
   method: MethodName | 'auto';
@@ -22,7 +35,7 @@ export interface Session {
   countsForStats?: boolean;
 }
 
-export interface Solve {
+export interface Solve extends Synced {
   id?: number;
   sessionId: number;
   date: number;
@@ -36,7 +49,7 @@ export interface Solve {
   comment?: string;
 }
 
-export interface AlgEntry {
+export interface AlgEntry extends Synced {
   id?: number;
   /** Broad set: CMLL, LSE, PLL, ... */
   group: string;
@@ -49,7 +62,7 @@ export interface AlgEntry {
   notes?: string;
 }
 
-export interface Rep {
+export interface Rep extends Synced {
   id?: number;
   algId: number;
   date: number;
@@ -58,6 +71,19 @@ export interface Rep {
   moveTimes: (number | null)[];
   extraMoves: number;
   success: boolean;
+}
+
+/**
+ * A record that was deleted, kept so the other device hears about it.
+ *
+ * A row that has simply gone is indistinguishable from one the other device
+ * has not been told about yet, so without these a delete would be undone by
+ * the next sync — the other device would helpfully hand it back.
+ */
+export interface Tombstone {
+  uid: string;
+  table: string;
+  deletedAt: number;
 }
 
 export interface Setting {
@@ -71,6 +97,7 @@ class TrainerDB extends Dexie {
   algs!: Table<AlgEntry, number>;
   reps!: Table<Rep, number>;
   settings!: Table<Setting, string>;
+  tombstones!: Table<Tombstone, string>;
 
   constructor() {
     super('speedcube-trainer');
@@ -155,7 +182,95 @@ class TrainerDB extends Dexie {
       reps: '++id, algId, date',
       settings: 'key',
     });
+
+    /**
+     * Everything gains an identity that survives leaving this browser.
+     *
+     * The auto-increment ids stay as the local primary keys, because half the
+     * app is written against them and a rename would be a large change for no
+     * gain. What is added is a `uid` beside them: a phone and a laptop both
+     * hand out id 7, and only one of the two can keep it, so the id cannot be
+     * what a record IS. The upgrade gives every row that already exists one.
+     */
+    this.version(5)
+      .stores({
+        sessions: '++id, &uid, name, createdAt, updatedAt',
+        solves: '++id, &uid, sessionId, date, updatedAt',
+        algs: '++id, &uid, group, family, name, createdAt, updatedAt',
+        reps: '++id, &uid, algId, date, updatedAt',
+        settings: 'key',
+        tombstones: 'uid, table, deletedAt',
+      })
+      .upgrade(async (tx) => {
+        const now = Date.now();
+        for (const name of ['sessions', 'solves', 'algs', 'reps'] as const) {
+          await tx
+            .table(name)
+            .toCollection()
+            .modify((row: Synced & { date?: number; createdAt?: number }) => {
+              row.uid ??= newUid();
+              // Backdate to when the record was made, so a first sync does not
+              // look like the entire history changed one second ago
+              row.updatedAt ??= row.date ?? row.createdAt ?? now;
+            });
+        }
+      });
+
+    this.stampWrites();
   }
+
+  /**
+   * Keep `uid` and `updatedAt` right without every caller remembering to.
+   *
+   * There are sixteen places that write one of these tables and there will be
+   * more; asking each of them to stamp two fields is a rule that gets forgotten
+   * once and then quietly breaks syncing for one kind of record. The hooks make
+   * it true by construction.
+   */
+  private stampWrites() {
+    for (const table of [this.sessions, this.solves, this.algs, this.reps]) {
+      table.hook('creating', (_key, obj: Synced) => {
+        obj.uid ??= newUid();
+        obj.updatedAt ??= Date.now();
+      });
+      table.hook('updating', (mods: Partial<Synced>, _key, obj: Synced) => {
+        // A write that carries its own updatedAt is the sync applying something
+        // from the other device; stamping it now would make it look local and
+        // newer than it is, and it would bounce back on the next push.
+        if (mods.updatedAt !== undefined) return;
+        return { updatedAt: Date.now(), uid: obj.uid ?? newUid() };
+      });
+    }
+  }
+}
+
+/** Identity that two devices cannot both invent. */
+export function newUid(): string {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  // Old browsers, and node while testing
+  const bytes = new Uint8Array(16);
+  if (c?.getRandomValues) c.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Delete a record and leave a mark saying so.
+ *
+ * Both halves in one transaction: a delete without its tombstone is a delete
+ * the other device will undo, and a tombstone without its delete is a record
+ * that vanishes from one device and not the other.
+ */
+export async function removeSynced(
+  table: 'sessions' | 'solves' | 'algs' | 'reps',
+  id: number,
+): Promise<void> {
+  await db.transaction('rw', db[table], db.tombstones, async () => {
+    const row = (await db[table].get(id)) as Synced | undefined;
+    if (row?.uid) await db.tombstones.put({ uid: row.uid, table, deletedAt: Date.now() });
+    await db[table].delete(id);
+  });
 }
 
 export const db = new TrainerDB();

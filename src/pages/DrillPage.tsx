@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/app';
-import { db, type AlgEntry, type Rep } from '../store/db';
+import { db, type AlgEntry, type Rep, removeSynced } from '../store/db';
 import { SEED_ALGS } from '../data/seedAlgs';
 import AlgLibrary from '../components/AlgLibrary';
 import CmllTrainer from '../components/CmllTrainer';
@@ -111,7 +111,7 @@ export default function DrillPage() {
 
   const removeAlg = async (id: number) => {
     await db.reps.where('algId').equals(id).delete();
-    await db.algs.delete(id);
+    await removeSynced('algs', id);
     if (selectedId === id) setSelectedId(null);
     bump();
   };

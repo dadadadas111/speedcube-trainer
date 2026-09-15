@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp, type Settings } from '../store/app';
-import { db, type Penalty, type Solve } from '../store/db';
+import { db, type Penalty, type Solve, removeSynced } from '../store/db';
 import { analyzeSolveRecord } from '../analysis/pipeline';
 import { effectiveTime, formatTime } from '../analysis/stats';
 import StepRibbon from '../components/StepRibbon';
@@ -31,7 +31,7 @@ export default function SolvesPage({ onOpenSolve }: { onOpenSolve: (id: number) 
   };
   const remove = async (s: Solve) => {
     if (!s.id) return;
-    await db.solves.delete(s.id);
+    await removeSynced('solves', s.id);
     bump();
   };
 

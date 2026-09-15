@@ -1,7 +1,7 @@
 /** Shared app state: sessions, settings, and cube connection status. */
 
 import { create } from 'zustand';
-import { db, ensureDefaultSession, getSetting, setSetting, type Session } from './db';
+import { db, ensureDefaultSession, getSetting, setSetting, type Session, removeSynced } from './db';
 import type { MethodName } from '../analysis/method';
 import { cubeLink, type CubeLinkStatus, type CubeInfo } from '../smartcube/connection';
 import { SOLVED_STATE, cloneState, type CubeState } from '../cube/cube';
@@ -121,7 +121,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   async deleteSession(id) {
     await db.solves.where('sessionId').equals(id).delete();
-    await db.sessions.delete(id);
+    await removeSynced('sessions', id);
     const sessions = await db.sessions.orderBy('createdAt').toArray();
     set({ sessions, revision: get().revision + 1 });
     if (get().sessionId === id) {

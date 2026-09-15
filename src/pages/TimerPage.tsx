@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store/app';
-import { db, type Solve, type Penalty } from '../store/db';
+import { db, type Solve, type Penalty, removeSynced } from '../store/db';
 import { generateScramble, type ScrambleSource } from '../cube/scramble';
 import { SOLVED_STATE, applyMoves, isSolved, cloneState, type CubeState } from '../cube/cube';
 import { cubeLink, normalizeTimestamps, type LiveMove } from '../smartcube/connection';
@@ -396,7 +396,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
 
   const deleteSolve = async (solve: Solve) => {
     if (!solve.id) return;
-    await db.solves.delete(solve.id);
+    await removeSynced('solves', solve.id);
     if (lastSolve?.id === solve.id) setLastSolve(null);
     bump();
   };

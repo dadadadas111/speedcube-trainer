@@ -4,7 +4,24 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    /**
+     * In production the app and the sync store are the same origin, because
+     * nginx puts the store at /sync on the site's own address. Development
+     * serves the app from localhost, so without this the browser would refuse
+     * the request and the difference would only show up on a real deployment.
+     *
+     * Point SYNC_ORIGIN at your own server to develop against it.
+     */
+    proxy: {
+      '/sync': {
+        target: process.env.SYNC_ORIGIN ?? 'https://cube.dash.id.vn',
+        changeOrigin: true,
+        secure: true,
+      },
+    },
+  },
   build: {
     /**
      * Both options below exist for the same reason, and only a production build

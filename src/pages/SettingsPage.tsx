@@ -4,6 +4,7 @@ import { exportAll, importAll, db } from '../store/db';
 import { KEYMAP_HELP } from '../smartcube/virtual';
 import { cubeLink, savedMacs, forgetMac } from '../smartcube/connection';
 import CubeSync from '../components/CubeSync';
+import SyncPanel from '../components/SyncPanel';
 import { recentCrashes, clearCrashes, formatCrash } from '../store/crashLog';
 
 export default function SettingsPage() {
@@ -244,6 +245,8 @@ export default function SettingsPage() {
         </div>
         {message && <p className="mt-3 text-sm text-warn">{message}</p>}
       </section>
+
+      <SyncPanel />
 
       <section className="panel p-5">
         <h2 className="text-base font-semibold">Smart cube</h2>
