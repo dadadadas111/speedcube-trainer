@@ -34,7 +34,8 @@ export function normalizeCode(input: string): string | null {
 /* ---------------- relay envelope ---------------- */
 
 export type ToRelay =
-  | { t: 'host' }
+  /** `kind` tells the relay how many may listen; absent means a bridge */
+  | { t: 'host'; kind?: 'bridge' | 'stream' }
   | { t: 'join'; code: string }
   | { t: 'msg'; data: unknown };
 

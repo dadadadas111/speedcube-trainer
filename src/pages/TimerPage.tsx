@@ -427,6 +427,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     publish({
       session: sessionName,
       count: recent.length,
+      recent: times.slice(0, 12),
       ao5,
       ao12,
       best,

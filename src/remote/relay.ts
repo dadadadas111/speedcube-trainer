@@ -46,6 +46,7 @@ export class RelayLink {
   private retries = 0;
   private retryTimer: number | null = null;
   private role: 'host' | 'join' | null = null;
+  private kind: 'bridge' | 'stream' = 'bridge';
 
   on(l: Listener): () => void {
     this.listeners.add(l);
@@ -64,9 +65,17 @@ export class RelayLink {
     }
   }
 
-  /** Ask for a room and a code to read out. */
-  host() {
+  /**
+   * Ask for a room and a code to read out.
+   *
+   * `kind` says what the room is for, and the relay caps the listeners
+   * accordingly: a bridge takes exactly one phone, because a second would put
+   * two cubes into one app, while a stream overlay is several read-only blocks
+   * and each is its own socket.
+   */
+  host(kind: 'bridge' | 'stream' = 'bridge') {
     this.role = 'host';
+    this.kind = kind;
     this.code = null;
     this.open();
   }
@@ -92,7 +101,7 @@ export class RelayLink {
 
     ws.onopen = () => {
       this.retries = 0;
-      this.send(this.role === 'host' ? { t: 'host' } : { t: 'join', code: this.code! });
+      this.send(this.role === 'host' ? { t: 'host', kind: this.kind } : { t: 'join', code: this.code! });
     };
 
     ws.onmessage = (ev) => {

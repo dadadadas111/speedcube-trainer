@@ -110,8 +110,64 @@ async def main() -> None:
         room = relay.rooms.get(code)
         check("an empty room is marked for collection", room is None or room.empty_since is not None)
 
-    print("\nALL PASS" if fails == 0 else f"\n{fails} FAILED")
-    sys.exit(1 if fails else 0)
+    
+# ---- A stream room broadcasts to every block; a bridge still takes one phone ----
+async def stream_rooms() -> None:
+    async with websockets.serve(relay.handler, "127.0.0.1", 8798):
+        url = "ws://127.0.0.1:8798"
+
+        # An overlay is one host and several read-only blocks
+        host = await websockets.connect(url)
+        await host.send(json.dumps({"t": "host", "kind": "stream"}))
+        code = (await recv(host))["code"]
+        blocks = []
+        for _ in range(3):
+            g = await websockets.connect(url)
+            await g.send(json.dumps({"t": "join", "code": code}))
+            blocks.append((g, await recv(g)))
+        check("three blocks all join one stream room",
+              all(j.get("t") == "joined" for _, j in blocks), str([j for _, j in blocks]))
+        for g, _ in blocks:
+            await recv(g)  # each is told the trainer is there
+        check("the host is told something is listening", (await recv(host)) == {"t": "peer", "up": True})
+
+        await host.send(json.dumps({"t": "msg", "data": {"kind": "stream", "state": {"seq": 1}}}))
+        got = [await recv(g) for g, _ in blocks]
+        check("one message reaches every block",
+              all(m.get("t") == "msg" and m["data"]["state"]["seq"] == 1 for m in got), str(got))
+
+        # Closing one block leaves the others alone
+        await blocks[0][0].close()
+        await asyncio.sleep(0.2)
+        await host.send(json.dumps({"t": "msg", "data": {"kind": "stream", "state": {"seq": 2}}}))
+        rest = [await recv(g) for g, _ in blocks[1:]]
+        check("closing one block does not disturb the rest",
+              all(m["data"]["state"]["seq"] == 2 for m in rest), str(rest))
+        for g, _ in blocks[1:]:
+            await g.close()
+        await host.close()
+
+        # A bridge room is unchanged: a second phone would put two cubes into
+        # one app, so it is still refused
+        pc = await websockets.connect(url)
+        await pc.send(json.dumps({"t": "host"}))
+        bcode = (await recv(pc))["code"]
+        phone = await websockets.connect(url)
+        await phone.send(json.dumps({"t": "join", "code": bcode}))
+        check("the first phone joins a bridge", (await recv(phone)).get("t") == "joined")
+        await recv(phone)
+        await recv(pc)
+        second = await websockets.connect(url)
+        await second.send(json.dumps({"t": "join", "code": bcode}))
+        refused = await recv(second)
+        check("a second phone is still refused", refused.get("t") == "error", str(refused))
+        check("and told why", "already in use" in str(refused.get("reason", "")), str(refused))
+        for c in (pc, phone, second):
+            await c.close()
 
 
 asyncio.run(main())
+asyncio.run(stream_rooms())
+
+print("\nALL PASS" if fails == 0 else f"\n{fails} FAILED")
+sys.exit(1 if fails else 0)

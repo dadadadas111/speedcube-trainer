@@ -32,7 +32,10 @@ if (typeof document !== 'undefined') {
    */
   const overlay = normalizeCode(new URLSearchParams(location.search).get('overlay') ?? '');
   const scale = Number(new URLSearchParams(location.search).get('scale')) || 22;
-  const backdrop = new URLSearchParams(location.search).get('bg') !== '0';
+  const params = new URLSearchParams(location.search);
+  const backdrop = params.get('bg') !== '0';
+  const widget = params.get('w') ?? 'all';
+  const rows = Number(params.get('n')) || 5;
 
   const root = document.getElementById('root');
   if (root) {
@@ -42,7 +45,7 @@ if (typeof document !== 'undefined') {
       createRoot(root).render(
         <StrictMode>
           <ErrorBoundary>
-            <OverlayPage code={overlay} scale={scale} backdrop={backdrop} />
+            <OverlayPage code={overlay} widget={widget} scale={scale} backdrop={backdrop} rows={rows} />
           </ErrorBoundary>
         </StrictMode>,
       );

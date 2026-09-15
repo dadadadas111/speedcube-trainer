@@ -43,28 +43,48 @@ GRACE_SECONDS = 90
 # A room nobody ever joins is a leak waiting to happen.
 UNUSED_ROOM_SECONDS = 30 * 60
 MAX_ROOMS = 500
+# Blocks in one overlay, plus room to spare. An unbounded room is a way to
+# spend somebody else's memory; nothing real comes close to this.
+MAX_GUESTS = 8
 MAX_MESSAGE_BYTES = 64 * 1024
 
 
 class Room:
-    __slots__ = ("code", "host", "guest", "created", "empty_since")
+    """
+    One host and everybody listening to it.
 
-    def __init__(self, code: str):
+    It used to be one host and one guest, which is all the phone bridge needs
+    and one fewer than the stream overlay needs. An overlay is a Browser Source
+    per block — a clock, a solve list, a scramble — and with a single guest slot
+    the second block to load silently took the first one's place, so the first
+    sat there waiting for a trainer that was right in front of it.
+
+    Messages go from anyone to everyone else, which leaves the bridge behaving
+    exactly as before: with two sockets in the room, "everyone else" is one.
+    """
+
+    __slots__ = ("code", "host", "guests", "created", "empty_since", "max_guests")
+
+    def __init__(self, code: str, max_guests: int = 1):
         self.code = code
         self.host: Optional[Socket] = None
-        self.guest: Optional[Socket] = None
+        self.guests: set[Socket] = set()
         self.created = time.monotonic()
         self.empty_since: Optional[float] = None
+        # How many may listen at once, which depends on what the room is FOR.
+        # A bridge has exactly one phone: a second joining would put two cubes
+        # into one app, which is why that was refused and still is. An overlay
+        # is several blocks, each its own socket, and they are all read-only.
+        self.max_guests = max_guests
 
-    def peer_of(self, ws: Socket) -> Optional[Socket]:
-        if ws is self.host:
-            return self.guest
-        if ws is self.guest:
-            return self.host
-        return None
+    def others(self, ws: Socket) -> list[Socket]:
+        out = [g for g in self.guests if g is not ws]
+        if self.host is not None and self.host is not ws:
+            out.append(self.host)
+        return out
 
     def occupied(self) -> bool:
-        return self.host is not None or self.guest is not None
+        return self.host is not None or bool(self.guests)
 
 
 rooms: dict[str, Room] = {}
@@ -110,7 +130,10 @@ async def handler(ws: Socket) -> None:
                 if len(rooms) >= MAX_ROOMS:
                     await fail(ws, "The relay is full, try again shortly")
                     return
-                room = Room(new_code())
+                # The host says what the room is for. Absent means a bridge,
+                # so a client that has never heard of this behaves as before.
+                many = msg.get("kind") == "stream"
+                room = Room(new_code(), MAX_GUESTS if many else 1)
                 room.host = ws
                 rooms[room.code] = room
                 await send(ws, {"t": "code", "code": room.code})
@@ -124,27 +147,32 @@ async def handler(ws: Socket) -> None:
                 if target is None:
                     await fail(ws, "No computer is waiting on that code")
                     return
-                # A slot left free by a phone that dropped is reclaimable; two
-                # phones fighting over one room is not. A live guest is exactly
-                # one whose handler has not reached its finally block yet.
-                if target.guest is not None:
-                    await fail(ws, "That code is already in use")
+                if len(target.guests) >= target.max_guests:
+                    # The wording matters for a bridge: a second phone trying to
+                    # take a room is a mistake worth naming, not a full room
+                    await fail(
+                        ws,
+                        "That room is full" if target.max_guests > 1 else "That code is already in use",
+                    )
                     return
                 room = target
-                room.guest = ws
+                room.guests.add(ws)
                 room.empty_since = None
                 await send(ws, {"t": "joined", "code": room.code})
                 if room.host is not None:
-                    await send(room.host, {"t": "peer", "up": True})
+                    # The host hears about the first arrival only: for the
+                    # bridge that is the one it cares about, and for an overlay
+                    # "something is listening" is all it means either way
+                    if len(room.guests) == 1:
+                        await send(room.host, {"t": "peer", "up": True})
                     await send(ws, {"t": "peer", "up": True})
 
             elif kind == "msg":
                 if room is None:
                     await fail(ws, "Not in a room")
                     return
-                peer = room.peer_of(ws)
-                if peer is not None:
-                    await send(peer, {"t": "msg", "data": msg.get("data")})
+                for other in room.others(ws):
+                    await send(other, {"t": "msg", "data": msg.get("data")})
 
             else:
                 await fail(ws, "Unknown message")
@@ -155,11 +183,16 @@ async def handler(ws: Socket) -> None:
         if room is not None:
             if room.host is ws:
                 room.host = None
-            elif room.guest is ws:
-                room.guest = None
-            peer = room.host or room.guest
-            if peer is not None:
-                await send(peer, {"t": "peer", "up": False})
+            else:
+                room.guests.discard(ws)
+            if room.occupied():
+                # Only when the LAST listener goes: the host does not need to
+                # hear "peer down" because one of five blocks was closed
+                if room.host is not None and not room.guests:
+                    await send(room.host, {"t": "peer", "up": False})
+                for g in room.guests:
+                    if room.host is None:
+                        await send(g, {"t": "peer", "up": False})
             else:
                 room.empty_since = time.monotonic()
 
@@ -172,7 +205,7 @@ async def sweep() -> None:
         for code, room in list(rooms.items()):
             if not room.occupied() and room.empty_since and now - room.empty_since > GRACE_SECONDS:
                 rooms.pop(code, None)
-            elif room.guest is None and now - room.created > UNUSED_ROOM_SECONDS:
+            elif not room.guests and now - room.created > UNUSED_ROOM_SECONDS:
                 if room.host is not None:
                     await fail(room.host, "Nobody joined; ask for a new code")
                 rooms.pop(code, None)

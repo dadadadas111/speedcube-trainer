@@ -60,7 +60,7 @@ export function startStream(): void {
       }
     },
   });
-  l.host();
+  l.host('stream');
   rebuild();
 }
 

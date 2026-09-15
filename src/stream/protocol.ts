@@ -46,6 +46,14 @@ export interface StreamState {
   /** Step splits of the solve just finished */
   steps: StreamStep[];
   count: number;
+  /**
+   * Recent times with penalties applied, newest first.
+   *
+   * Sent rather than derived, because the overlay has no database — it knows
+   * only what it is told, and a solve list is the one block that needs more
+   * than the last solve.
+   */
+  recent: number[];
   ao5: number;
   ao12: number;
   best: number;
@@ -58,6 +66,7 @@ export const EMPTY_STATE: StreamState = {
   seq: 0,
   phase: 'idle',
   session: '',
+  recent: [],
   scramble: null,
   elapsedMs: 0,
   inspectLeftMs: 0,
