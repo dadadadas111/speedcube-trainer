@@ -154,10 +154,15 @@ export class CubeLink {
    * the clock runs on. REQUEST_FACELETS is what breaks the deadlock: the
    * library checks for missed moves whenever a facelets packet comes back.
    *
-   * So this one is allowed to ask sooner and to keep asking a little longer.
-   * It is still bounded, and it still only fires when the hands have stopped.
+   * So this one asks sooner and keeps asking. Six tries over four seconds was
+   * still too timid: a solve that ends with the model behind would run on, and
+   * the only way out was throwing the solve away as a DNF. Twenty-four tries
+   * spaced 700ms covers about seventeen seconds — long past the point where a
+   * solve is over — at well under two writes a second, which is nowhere near
+   * the rate that drops a link. Any move refills it, so turning the cube always
+   * wins over asking it questions.
    */
-  private finishBudget = new CommandBudget(600, 6);
+  private finishBudget = new CommandBudget(700, 24);
   /** Four turns of D in a row means "this cube is solved, take my word for it" */
   private gesture = new ResetGesture();
   /**

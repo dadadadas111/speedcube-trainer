@@ -25,6 +25,16 @@ const HOLD_MS = 350;
 /** How long the hands have to be still before offering a way out of the solve */
 const STUCK_MS = 3000;
 /**
+ * How long before offering to stop the clock outright.
+ *
+ * Sooner than the DNF, because they are different situations that looked the
+ * same: a solve that is FINISHED but whose last moves have not reached the app
+ * is not a solve to abandon. Pressing this records the time from the last turn
+ * the cube did report, which is the real time — the same number a manual sync
+ * produces, and the reason it is worth offering at all.
+ */
+const DONE_MS = 1500;
+/**
  * How still the hands have to be before asking the cube whether it is solved.
  *
  * Turns during a solve land 100-200ms apart, so a third of a second without one
@@ -53,6 +63,8 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const [showSync, setShowSync] = useState(false);
   /** The cube has turns it has not handed over yet — the clock is waiting on it */
   const [waitingOnCube, setWaitingOnCube] = useState(false);
+  /** The hands have been still long enough to offer stopping the clock */
+  const [maybeDone, setMaybeDone] = useState(false);
   /** The per-step numbers, opened over the cube. A phone has no hover. */
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -132,6 +144,7 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
       stopRaf();
       setDisplay(timeMs);
       setStuck(false);
+      setMaybeDone(false);
       setWaitingOnCube(false);
       setPhaseBoth('done');
       const solve: Solve = {
@@ -316,7 +329,11 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
       setStuck(false);
       return;
     }
-    const id = setInterval(() => setStuck(performance.now() - lastMoveAtRef.current > STUCK_MS), 300);
+    const id = setInterval(() => {
+      const still = performance.now() - lastMoveAtRef.current;
+      setStuck(still > STUCK_MS);
+      setMaybeDone(still > DONE_MS);
+    }, 300);
     return () => clearInterval(id);
   }, [phase, usingCube]);
 
@@ -473,8 +490,23 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
           // leaving you to wonder why the clock is running on a solved cube.
           <p className="pop-in text-sm text-warn">Catching up with the cube…</p>
         )}
+        {/* Two different situations that used to share one button. A finished
+            solve whose last turns have not reached the app is not a solve to
+            throw away — and DNF was the only way out of it. */}
+        {maybeDone && usingCube && (
+          <button
+            className="btn btn-primary pop-in !py-1.5"
+            onClick={() => {
+              void cubeLink.resync();
+              finishFromMoves();
+            }}
+            title="Records the time of your last turn, not the time the clock ran to"
+          >
+            Solved — stop the clock
+          </button>
+        )}
         {stuck ? (
-          <button className="btn btn-danger pop-in" onClick={() => finishFromMoves('DNF')}>
+          <button className="btn btn-danger !py-1 !text-[13px]" onClick={() => finishFromMoves('DNF')}>
             Abort as DNF
           </button>
         ) : usingCube ? null : (
