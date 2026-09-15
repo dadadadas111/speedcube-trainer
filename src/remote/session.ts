@@ -8,12 +8,13 @@
 import { useSyncExternalStore } from 'react';
 import { relay, type RelayStatus } from './relay';
 import { startBridge, startHost } from './wiring';
+import { screenLock } from '../browser/wakeLock';
 
 export type RemoteRole = 'host' | 'bridge' | null;
 
 let role: RemoteRole = null;
 let teardown: (() => void) | null = null;
-let wakeLock: { release(): Promise<void> } | null = null;
+let releaseScreenHold: (() => void) | null = null;
 const subscribers = new Set<() => void>();
 
 function changed() {
@@ -21,28 +22,17 @@ function changed() {
 }
 
 /**
- * Keep a bridging phone's screen on. Browsers drop the lock whenever the tab is
- * hidden, so it has to be asked for again each time the phone comes back.
+ * A bridging phone's screen has to stay on: it is holding the cube and nobody
+ * is going to touch it. Re-asking after the page has been hidden, and sharing
+ * the lock with the rest of the app, both live in browser/wakeLock.
  */
-async function holdScreenAwake() {
-  try {
-    const wl = (navigator as { wakeLock?: { request(t: 'screen'): Promise<{ release(): Promise<void> }> } }).wakeLock;
-    if (!wl) return;
-    wakeLock = await wl.request('screen');
-  } catch {
-    /* not supported, or refused — the bridge still works */
-  }
+function holdScreenAwake() {
+  releaseScreenHold ??= screenLock.hold();
 }
 
 function releaseScreen() {
-  void wakeLock?.release().catch(() => {});
-  wakeLock = null;
-}
-
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (role === 'bridge' && document.visibilityState === 'visible' && !wakeLock) void holdScreenAwake();
-  });
+  releaseScreenHold?.();
+  releaseScreenHold = null;
 }
 
 function begin(next: Exclude<RemoteRole, null>) {
@@ -62,7 +52,7 @@ export function hostPhone() {
 export function bridgeToCode(code: string) {
   begin('bridge');
   relay.join(code);
-  void holdScreenAwake();
+  holdScreenAwake();
 }
 
 export function stopRemote() {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApp } from './store/app';
 import CubeStatus from './components/CubeStatus';
+import { useScreenAwake } from './browser/useScreenAwake';
 import TimerPage from './pages/TimerPage';
 import SolvesPage from './pages/SolvesPage';
 import ReplayPage from './pages/ReplayPage';
@@ -21,7 +22,14 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 export default function App() {
-  const { ready, init, sessions, sessionId, setSession } = useApp();
+  const { ready, init, sessions, sessionId, setSession, cubeStatus } = useApp();
+  /**
+   * A paired cube means your hands are on it, not on the screen — which is
+   * exactly what a phone reads as "gone away" before dimming and locking, and
+   * it does it mid-solve. The browser lets the lock go whenever the page is
+   * hidden, so a pocketed phone still sleeps normally.
+   */
+  useScreenAwake(cubeStatus === 'connected');
   const [tab, setTab] = useState<Tab>('timer');
   const [replayId, setReplayId] = useState<number | null>(null);
 
