@@ -1,23 +1,26 @@
 /**
- * Drilling random cases from one or more families — csTimer's subset trainer.
+ * CMLL, dealt as scrambles rather than as cases.
  *
- * The shape of it is a loop you never have to interrupt. Press start once; from
- * then on, solving a case deals the next one immediately, and the one you just
- * did stays on screen with its own history while you set the next up. Pressing
- * a button between every case, and losing the result the moment you did, made
- * the thing unusable for actual practice.
+ * Being shown the case teaches you the algorithm and nothing else. Recognition
+ * is the half that costs time in a real solve, and it only gets trained when
+ * you meet the case the way you meet it there: you scramble, you look, and
+ * nobody has told you what it is. So this works like the timer — here is a
+ * scramble, apply it, go — and the case is named only afterwards.
  *
- * One thing worth saying plainly: the setup sequence is just the algorithm
- * reversed, so seeing the whole thing gives the case away. That is why only ONE
- * MOVE AT A TIME is shown by default — turning it mechanically still leaves you
- * to recognise the case at the end. A button reveals the full sequence.
+ * The scramble keeps both Roux blocks standing (see analysis/cmll.ts), and an
+ * attempt ends when the corners are done, not when the cube is solved. The last
+ * six edges are somebody else's drill.
+ *
+ * The loop never has to be interrupted: finishing one deals the next, and the
+ * one just done stays on screen with its history while you set the next up.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AlgEntry, Rep } from '../store/db';
 import { db } from '../store/db';
-import { invertAlg, parseAlg } from '../cube/alg';
-import { SOLVED_STATE, isSolved, cloneState, type CubeState } from '../cube/cube';
+import { parseAlg } from '../cube/alg';
+import { SOLVED_STATE, cloneState, type CubeState } from '../cube/cube';
+import { cmllDone, cmllScrambleFor } from '../analysis/cmll';
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
 import { DrillMatcher, caseStateFor } from '../analysis/drill';
 import { useCubeInput } from '../smartcube/useCubeInput';
@@ -39,6 +42,8 @@ interface Attempt {
 }
 
 interface Props {
+  /** Which of the page's tabs a phone is showing; ignored from lg up */
+  pane: 'drill' | 'cases' | 'stats';
   pool: AlgEntry[];
   usingCube: boolean;
   keyboard: boolean;
@@ -67,11 +72,12 @@ const median = (xs: number[]) => {
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 };
 
-export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRepSaved }: Props) {
+export default function CmllTrainer({ pane, pool, usingCube, keyboard, repCounts, onRepSaved }: Props) {
+  // A phone shows one pane at a time; a wide screen shows the lot
+  const only = (p: 'drill' | 'cases' | 'stats') => (pane === p ? '' : 'hidden lg:block');
   const [phase, setPhase] = useState<Phase>('idle');
   const [target, setTarget] = useState<AlgEntry | null>(null);
   const [progress, setProgress] = useState<ScrambleProgress | null>(null);
-  const [reveal, setReveal] = useState(false);
   const [last, setLast] = useState<Attempt | null>(null);
   const [history, setHistory] = useState<Attempt[]>([]);
   /** Every time recorded for these cases, so "your best" means all time */
@@ -92,31 +98,52 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
     setPhase(p);
   };
 
-  const moves = useMemo(() => {
-    if (!target) return [];
-    try {
-      return parseAlg(target.alg);
-    } catch {
-      return [];
-    }
-  }, [target]);
+  const [scramble, setScramble] = useState<string[]>([]);
+  /** The cube the scramble is measured from — not solved, after the first case */
+  const [notReady, setNotReady] = useState(false);
 
-  const setup = useMemo(() => {
-    if (!moves.length) return [];
-    // Reversing the algorithm produces the case; a random U adds an AUF to find
-    const auf = ['', 'U', "U'", 'U2'][Math.floor(Math.random() * 4)];
-    return auf ? [...invertAlg(moves), auf] : invertAlg(moves);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moves, target?.id]);
-
-  /** Deal the next case. Used to start, to skip, and straight after a solve. */
+  /**
+   * Deal the next case. Used to start, to skip, and straight after a solve.
+   *
+   * The scramble is built from where the cube IS, not from solved. After a CMLL
+   * attempt the last six edges are still scrambled, so a sequence measured from
+   * a solved cube would describe a position you could never arrive at — which
+   * is what made the old case drill work exactly once.
+   *
+   * It only needs the corners solved to start from, because that is all the
+   * scramble touches that matters. Anything else and the case it deals would
+   * not be the case it thinks it dealt.
+   */
   const deal = useCallback(() => {
+    if (!cmllDone(cubeRef.current)) {
+      setNotReady(true);
+      setPhaseBoth('idle');
+      return;
+    }
+    setNotReady(false);
     const picked = pickCase(pool, repCounts, targetRef.current?.id ?? null);
+    if (!picked) {
+      setPhaseBoth('idle');
+      return;
+    }
+    let next: string[] | null = null;
+    try {
+      next = cmllScrambleFor(parseAlg(picked.alg));
+    } catch {
+      next = null;
+    }
+    if (!next) {
+      setPhaseBoth('idle');
+      return;
+    }
     targetRef.current = picked;
     setTarget(picked);
+    setScramble(next);
+    const tracker = new ScrambleTracker(next, cloneState(cubeRef.current));
+    trackerRef.current = tracker;
+    setProgress(tracker.update(cubeRef.current));
     matcherRef.current = null;
-    setReveal(false);
-    setPhaseBoth(picked ? 'setup' : 'idle');
+    setPhaseBoth('setup');
   }, [pool, repCounts]);
 
   const stop = useCallback(() => {
@@ -170,15 +197,6 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
     if (phase !== 'armed' && phase !== 'running') return;
     return cubeLink.holdResetGesture();
   }, [phase]);
-
-  // Rebuild the guide whenever a new case comes up
-  useEffect(() => {
-    if (!setup.length) return;
-    const tracker = new ScrambleTracker(setup);
-    trackerRef.current = tracker;
-    setProgress(tracker.update(cubeRef.current));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setup]);
 
   const arm = useCallback(() => {
     const entry = targetRef.current;
@@ -257,7 +275,9 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
         // Still run the matcher so per-move times are captured WHEN the stored
         // algorithm is the one used; another algorithm only gets a total.
         const res = matcherRef.current?.feed(state, t);
-        if (isSolved(state)) {
+        // The corners, not the cube. Waiting for solved would be waiting for
+        // the last six edges, which are not what is being drilled.
+        if (cmllDone(state)) {
           const execMs = Math.max(0, t - startRef.current);
           const recognitionMs = Math.max(0, startRef.current - armedAtRef.current);
           void finish(execMs, recognitionMs, res?.event === 'complete' ? res.moveTimes : []);
@@ -290,7 +310,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
   if (!usingCube) {
     return (
       <section className="panel p-5">
-        <h2 className="text-base font-semibold">Random case drill</h2>
+        <h2 className="text-base font-semibold">CMLL drill</h2>
         <p className="mt-2 max-w-[60ch] text-sm text-ink-400">
           This mode needs a smart cube. Connect one from the top bar, or switch on the keyboard cube in Settings.
         </p>
@@ -300,7 +320,7 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
 
   return (
     <>
-      <section className="panel px-4 py-4 sm:px-5">
+      <section className={'panel px-4 py-4 sm:px-5 ' + only('drill')}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[13px] text-ink-400">
             {pool.length} cases in scope
@@ -324,55 +344,47 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
           </div>
         </div>
 
+        {/* The scramble in full, the way the timer shows one. It gives nothing
+            away — it is not the algorithm reversed, and the case it sets up is
+            only named once the attempt is over. */}
+        {phase === 'setup' && target && (
+          <div className="mt-3">
+            <ScrambleGuide moves={scramble} progress={progress} />
+          </div>
+        )}
+
         {phase !== 'idle' && target && (
           <div className="mt-4 flex flex-col items-center gap-3">
-            {phase === 'setup' &&
-              (reveal ? (
-                <div className="w-full">
-                  <ScrambleGuide moves={setup} progress={progress} />
-                </div>
-              ) : (
-                <div className="flex items-baseline gap-3">
-                  <span
-                    className={`font-mono text-4xl font-semibold leading-none ${
-                      progress?.status === 'off-track' ? 'text-bad' : progress?.status === 'partial' ? 'text-warn' : 'text-cube-blue'
-                    }`}
-                  >
-                    {progress?.status === 'off-track'
-                      ? progress.fix.join(' ') || 'solve the cube'
-                      : progress?.status === 'partial'
-                        ? progress.remaining
-                        : (progress?.next ?? '')}
-                  </span>
-                  <span className="tnum text-[13px] text-ink-500">
-                    {progress?.done ?? 0}/{setup.length}
-                  </span>
-                </div>
-              ))}
-
-            {phase === 'setup' && (
-              <button className="btn btn-ghost !px-2 !py-0.5 !text-[12px]" onClick={() => setReveal(!reveal)}>
-                {reveal ? 'One move at a time' : 'Show the whole setup'}
-              </button>
-            )}
-
             {phase === 'armed' && (
-              <p className="armed text-lg font-semibold text-good">In the case — recognise it and go</p>
+              <p className="armed text-lg font-semibold text-good">Recognise it and go</p>
             )}
             {phase === 'running' && <p className="text-lg font-semibold text-cube-blue">Running…</p>}
-
             <CubeView state={live.animate ? live.shown : cubeState} animate={live.animate} size={170} />
           </div>
         )}
 
-        {phase === 'idle' && history.length === 0 && (
-          <p className="mt-3 text-sm text-ink-400">Cases you have never drilled come up more often.</p>
+        {/* Starting anywhere else would deal a case and then set up a different
+            one, which is worse than refusing. */}
+        {notReady && phase === 'idle' && (
+          <div className="mt-3 flex flex-col items-center gap-3">
+            <p className="max-w-[46ch] text-center text-sm text-warn">
+              Build both blocks and finish the corners first. The last six edges can be anywhere — this drill
+              never asks for them.
+            </p>
+            <CubeView state={live.animate ? live.shown : cubeState} animate={live.animate} size={150} />
+          </div>
+        )}
+
+        {phase === 'idle' && !notReady && history.length === 0 && (
+          <p className="mt-3 text-sm text-ink-400">
+            Cases you have never drilled come up more often. An attempt ends when the corners are done.
+          </p>
         )}
       </section>
 
       {/* The case just finished stays here while the next one is being set up */}
       {last && lastStats && (
-        <section className="panel px-4 py-4 sm:px-5">
+        <section className={'panel px-4 py-4 sm:px-5 ' + only('drill')}>
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <h2 className="text-sm font-semibold">
               {last.entry.family} <span className="text-ink-400">· {last.entry.name}</span>
@@ -397,8 +409,10 @@ export default function CaseTrainer({ pool, usingCube, keyboard, repCounts, onRe
         </section>
       )}
 
+      {/* Reading last sitting's table belongs with the numbers, not on top of
+          the cube you are about to turn. */}
       {slowest.length > 1 && (
-        <section className="panel overflow-hidden">
+        <section className={'panel overflow-hidden ' + only('stats')}>
           <header className="flex items-baseline justify-between border-b border-ink-700 px-4 py-3">
             <h2 className="text-sm font-semibold">Slowest cases</h2>
             <span className="text-[12px] text-ink-500">this sitting</span>

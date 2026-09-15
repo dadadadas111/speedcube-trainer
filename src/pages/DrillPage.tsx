@@ -3,7 +3,7 @@ import { useApp } from '../store/app';
 import { db, type AlgEntry, type Rep } from '../store/db';
 import { SEED_ALGS } from '../data/seedAlgs';
 import AlgLibrary from '../components/AlgLibrary';
-import CaseTrainer from '../components/CaseTrainer';
+import CmllTrainer from '../components/CmllTrainer';
 import { classifyCornerAlg, describeFamily } from '../analysis/cornerCase';
 import { formatAlg, invertAlg, parseAlg } from '../cube/alg';
 import { cleanMoveStream } from '../cube/moveStream';
@@ -71,9 +71,16 @@ export default function DrillPage() {
   const selected = algs.find((a) => a.id === selectedId) ?? null;
   const familyKey = (a: AlgEntry) => a.group + ' / ' + a.family;
 
+  /**
+   * The families this drill can deal from.
+   *
+   * CMLL only: the mode deals a scramble that keeps both Roux blocks and stops
+   * when the corners are done, which is a sentence that means nothing about a
+   * PLL or a finger trick.
+   */
   const allFamilies = useMemo(() => {
     const seen = new Map<string, { key: string; group: string; family: string; count: number }>();
-    for (const a of algs) {
+    for (const a of algs.filter((x) => x.group === 'CMLL')) {
       const key = familyKey(a);
       const cur = seen.get(key);
       if (cur) cur.count++;
@@ -82,14 +89,15 @@ export default function DrillPage() {
     return [...seen.values()];
   }, [algs]);
 
-  // Entering random mode defaults the scope to the selected case's family
+  // Entering the drill selects every family: all forty-two is the ordinary way
+  // to practise CMLL, and narrowing it is the special case, not the default.
   useEffect(() => {
-    if (mode !== 'random' || scope.size > 0 || !selected) return;
-    setScope(new Set([familyKey(selected)]));
-  }, [mode, scope.size, selected]);
+    if (mode !== 'random' || scope.size > 0 || !allFamilies.length) return;
+    setScope(new Set(allFamilies.map((f) => f.key)));
+  }, [mode, scope.size, allFamilies]);
 
   const pool = useMemo(
-    () => algs.filter((a) => scope.has(familyKey(a))),
+    () => algs.filter((a) => a.group === 'CMLL' && scope.has(familyKey(a))),
     [algs, scope],
   );
 
@@ -164,13 +172,28 @@ export default function DrillPage() {
             className={'btn !py-1 !text-[13px] ' + (mode === 'random' ? '!border-cube-blue !text-cube-blue' : '')}
             onClick={() => setMode('random')}
           >
-            Random within family
+            CMLL
           </button>
         </div>
 
         {mode === 'random' && (
           <section className={'panel p-4 ' + only('cases')}>
-            <p className="mb-2 text-[13px] text-ink-400">Pick what to drill</p>
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-[13px] text-ink-400">
+                {scope.size === allFamilies.length ? 'All of CMLL' : `${pool.length} cases`}
+              </p>
+              <div className="flex gap-1.5">
+                <button
+                  className="btn btn-ghost !px-2 !py-0.5 !text-[12px]"
+                  onClick={() => setScope(new Set(allFamilies.map((f) => f.key)))}
+                >
+                  All
+                </button>
+                <button className="btn btn-ghost !px-2 !py-0.5 !text-[12px]" onClick={() => setScope(new Set())}>
+                  None
+                </button>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {allFamilies.map((f) => {
                 const on = scope.has(f.key);
@@ -195,15 +218,14 @@ export default function DrillPage() {
         )}
 
         {mode === 'random' && (
-          <div className={only('drill')}>
-          <CaseTrainer
+          <CmllTrainer
+            pane={pane}
             pool={pool}
             usingCube={usingCube}
             keyboard={settings.keyboardCube}
             repCounts={repCounts}
             onRepSaved={() => void load()}
           />
-          </div>
         )}
 
         {mode === 'one' && adding && (
