@@ -20,6 +20,15 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
       },
+      // The phone bridge and the stream overlay both ride this. Proxied for the
+      // same reason as /sync: in production it is the app's own origin, and
+      // without this development is the only place it does not work.
+      '/relay': {
+        target: process.env.RELAY_ORIGIN ?? 'wss://cube.dash.id.vn',
+        ws: true,
+        changeOrigin: true,
+        secure: true,
+      },
     },
   },
   build: {

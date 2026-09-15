@@ -17,6 +17,7 @@ import CubeSync from '../components/CubeSync';
 import PostSolve from '../components/PostSolve';
 import StepRibbon from '../components/StepRibbon';
 import StepDetail from '../components/StepDetail';
+import { publish } from '../stream/host';
 
 type Phase = 'scrambling' | 'ready' | 'inspecting' | 'holding' | 'armed' | 'running' | 'done';
 
@@ -32,7 +33,8 @@ const STUCK_MS = 3000;
 const STILL_MS = 350;
 
 export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) => void }) {
-  const { settings, updateSettings, sessionId, cubeStatus, bump, revision } = useApp();
+  const { settings, updateSettings, sessionId, sessions, cubeStatus, bump, revision } = useApp();
+  const sessionName = sessions.find((x) => x.id === sessionId)?.name ?? '';
   const usingCube = cubeStatus === 'connected' || settings.keyboardCube;
   const slow = settings.timerMode === 'slow';
 
@@ -344,6 +346,33 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
     return () => clearInterval(id);
   }, [phase, cubeStatus]);
 
+  /**
+   * Keep the stream overlay told.
+   *
+   * On phase changes rather than on every frame: the overlay counts the clock
+   * itself from "this much had passed when I was told", which is smooth and
+   * costs the network one message per phase instead of sixty a second.
+   */
+  useEffect(() => {
+    publish({
+      phase:
+        phase === 'holding' || phase === 'armed'
+          ? 'ready'
+          : (phase as 'scrambling' | 'ready' | 'inspecting' | 'running' | 'done'),
+      scramble: phase === 'running' ? null : scramble.join(' '),
+      elapsedMs: phase === 'running' ? performance.now() - startRef.current : 0,
+      inspectLeftMs: inspectLeft,
+      // Tied to the solve, not to the phase: finishing deals the next scramble
+      // straight away, so 'done' lasts a single tick and the overlay would have
+      // blinked the time and dropped it. lastSolve stays until the next one
+      // starts, which is exactly how long the number is worth showing.
+      finalMs: lastSolve ? effectiveTime(lastSolve) : null,
+      penalty: lastSolve?.penalty ?? 'none',
+    });
+    // inspectLeft ticks every frame while inspecting; the countdown is the one
+    // number the overlay cannot work out for itself, so it is worth the traffic
+  }, [phase, scramble, lastSolve, inspectLeft]);
+
   useEffect(() => () => stopRaf(), []);
 
   /* ---------- derived ---------- */
@@ -375,6 +404,22 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
   const ao5 = averageOf(times.slice(0, 5));
   const ao12 = averageOf(times.slice(0, 12));
   const best = finiteTimes.length ? Math.min(...finiteTimes) : NaN;
+
+  // The averages and the step splits, which only change when a solve lands
+  useEffect(() => {
+    publish({
+      session: sessionName,
+      count: recent.length,
+      ao5,
+      ao12,
+      best,
+      goalMs: settings.targetMs,
+      goalHits: times.filter((t) => isFinite(t) && t <= (settings.targetMs)).length,
+      steps: analysis
+        ? analysis.steps.map((s) => ({ key: s.key, label: s.label, durationMs: s.durationMs, leadMs: s.leadMs }))
+        : [],
+    });
+  }, [analysis, ao5, ao12, best, recent.length, times, sessionName, settings.targetMs]);
 
   /**
    * Only say "cube not solved" when the app is genuinely stuck: off track and

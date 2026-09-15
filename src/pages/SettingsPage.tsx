@@ -5,6 +5,7 @@ import { KEYMAP_HELP } from '../smartcube/virtual';
 import { cubeLink, savedMacs, forgetMac } from '../smartcube/connection';
 import CubeSync from '../components/CubeSync';
 import SyncPanel from '../components/SyncPanel';
+import StreamPanel from '../components/StreamPanel';
 import { recentCrashes, clearCrashes, formatCrash } from '../store/crashLog';
 
 export default function SettingsPage() {
@@ -247,6 +248,8 @@ export default function SettingsPage() {
       </section>
 
       <SyncPanel />
+
+      <StreamPanel />
 
       <section className="panel p-5">
         <h2 className="text-base font-semibold">Smart cube</h2>
