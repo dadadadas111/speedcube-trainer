@@ -36,6 +36,16 @@ export default function DrillPage() {
   const [repCounts, setRepCounts] = useState<Map<number, number>>(new Map());
   const [adding, setAdding] = useState(false);
   const [mode, setMode] = useState<'one' | 'random'>('one');
+  /**
+   * Which part of the page a phone is showing.
+   *
+   * On a wide screen the library sits in its own column beside the drill and
+   * everything is visible at once. Stacked on a phone it put four hundred and
+   * eighty pixels of alg list above the case — so the one thing you are meant
+   * to be looking at while you turn started below the fold, every single time.
+   * A phone gets one of these at a time instead, and no scrolling.
+   */
+  const [pane, setPane] = useState<'drill' | 'cases' | 'stats'>('drill');
   const [scope, setScope] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -98,22 +108,52 @@ export default function DrillPage() {
     bump();
   };
 
+  // On a phone only the chosen pane is in the document; from lg up every pane
+  // is, and the grid puts them where they have always been.
+  const only = (p: 'drill' | 'cases' | 'stats') => (pane === p ? '' : 'hidden lg:block');
+
   return (
     // Random drilling picks its cases from the family chips, so the library is
     // just something to scroll past — it only appears when it is being used.
-    <div className={mode === 'one' ? 'grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]' : 'flex flex-col gap-5'}>
+    <div className={mode === 'one' ? 'grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-5' : 'flex flex-col gap-4 lg:gap-5'}>
+      {/* Phone only: the page's own tabs. Picking a case jumps you back to the
+          drill, because that is why you went looking for one. */}
+      <div className="flex gap-1 lg:hidden">
+        {([
+          ['drill', 'Drill'],
+          ['cases', mode === 'one' ? 'Cases' : 'Families'],
+          ['stats', 'Stats'],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setPane(id)}
+            className={
+              'flex-1 rounded-md border px-2 py-1 text-[13px] transition-colors ' +
+              (pane === id ? 'border-cube-blue bg-ink-800 text-ink-100' : 'border-ink-700 text-ink-400')
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {mode === 'one' && (
-        <AlgLibrary
-          algs={algs}
-          repCounts={repCounts}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onAdd={() => setAdding(true)}
-        />
+        <div className={only('cases')}>
+          <AlgLibrary
+            algs={algs}
+            repCounts={repCounts}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setPane('drill');
+            }}
+            onAdd={() => setAdding(true)}
+          />
+        </div>
       )}
 
-      <div className="flex flex-col gap-5">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-4 lg:gap-5">
+        <div className={'flex flex-wrap items-center gap-2 ' + only('cases')}>
           <button
             className={'btn !py-1 !text-[13px] ' + (mode === 'one' ? '!border-cube-blue !text-cube-blue' : '')}
             onClick={() => setMode('one')}
@@ -129,7 +169,7 @@ export default function DrillPage() {
         </div>
 
         {mode === 'random' && (
-          <section className="panel p-4">
+          <section className={'panel p-4 ' + only('cases')}>
             <p className="mb-2 text-[13px] text-ink-400">Pick what to drill</p>
             <div className="flex flex-wrap gap-1.5">
               {allFamilies.map((f) => {
@@ -155,6 +195,7 @@ export default function DrillPage() {
         )}
 
         {mode === 'random' && (
+          <div className={only('drill')}>
           <CaseTrainer
             pool={pool}
             usingCube={usingCube}
@@ -162,6 +203,7 @@ export default function DrillPage() {
             repCounts={repCounts}
             onRepSaved={() => void load()}
           />
+          </div>
         )}
 
         {mode === 'one' && adding && (
@@ -178,6 +220,7 @@ export default function DrillPage() {
         )}
         {mode === 'one' && (selected ? (
           <AlgDetail
+            pane={pane}
             key={selected.id}
             alg={selected}
             reps={reps}
@@ -187,7 +230,9 @@ export default function DrillPage() {
             onDelete={() => selected.id && void removeAlg(selected.id)}
           />
         ) : (
-          <p className="panel p-6 text-sm text-ink-400">Pick an algorithm on the left, or add a new one.</p>
+          <p className={'panel p-6 text-sm text-ink-400 ' + only('drill')}>
+            Pick an algorithm from Cases, or add a new one.
+          </p>
         ))}
       </div>
     </div>
@@ -408,6 +453,7 @@ function AlgForm({
 /* ------------------------------------------------------------------ */
 
 function AlgDetail({
+  pane,
   alg,
   reps,
   usingCube,
@@ -415,6 +461,7 @@ function AlgDetail({
   onRepSaved,
   onDelete,
 }: {
+  pane: 'drill' | 'cases' | 'stats';
   alg: AlgEntry;
   reps: Rep[];
   usingCube: boolean;
@@ -422,6 +469,7 @@ function AlgDetail({
   onRepSaved: () => void;
   onDelete: () => void;
 }) {
+  const only = (p: 'drill' | 'cases' | 'stats') => (pane === p ? '' : 'hidden lg:block');
   const moves = useMemo(() => {
     try {
       return parseAlg(alg.alg);
@@ -517,28 +565,42 @@ function AlgDetail({
 
   return (
     <>
-      <section className="panel p-5">
+      <section className={'panel p-4 sm:p-5 ' + only('drill')}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[13px] text-ink-400">
               {alg.group} · {alg.family}
             </p>
-            <h2 className="text-xl font-semibold">{alg.name}</h2>
+            <h2 className="text-lg font-semibold sm:text-xl">{alg.name}</h2>
           </div>
-          <button className="btn btn-danger !py-1 !text-[13px]" onClick={onDelete}>
-            Delete algorithm
-          </button>
+          {/* Deleting belongs with choosing, not with drilling — and on a phone
+              it was the widest thing in the row it shared with the case name.
+              Wrapped rather than given `hidden` directly: .btn sets its own
+              display and wins. */}
+          <div className="hidden lg:block">
+            <button className="btn btn-danger !py-1 !text-[13px]" onClick={onDelete}>
+              Delete algorithm
+            </button>
+          </div>
         </div>
         {alg.notes && <p className="mt-2 max-w-[60ch] text-[13px] text-ink-400">{alg.notes}</p>}
 
         <AlgLine moves={moves} stats={summary.moveStats} progress={phase === 'running' || phase === 'done' ? progress : -1} />
 
-        <div className="mt-5 grid gap-5 md:grid-cols-[190px_minmax(0,1fr)]">
+        {/* The two cubes side by side rather than stacked: on a phone that is
+            the difference between seeing both and scrolling for the second. */}
+        <div className="mt-4 flex flex-wrap items-start gap-4">
           <div>
-            <p className="mb-2 text-[13px] text-ink-400">The case</p>
-            <CubeView state={caseState} size={170} />
+            <p className="mb-1.5 text-[13px] text-ink-400">The case</p>
+            <CubeView state={caseState} size={150} />
           </div>
-          <div>
+          {usingCube && (
+            <div>
+              <p className="mb-1.5 text-[13px] text-ink-400">Your cube</p>
+              <CubeView state={cubeState} size={150} />
+            </div>
+          )}
+          <div className="min-w-[15rem] flex-1">
             {!usingCube ? (
               <p className="text-sm text-ink-400">
                 Drilling needs a smart cube. Connect one from the top bar, or switch on the keyboard cube in
@@ -556,17 +618,28 @@ function AlgDetail({
                 onSetupVirtual={() => virtualCube.setState(applyMoves(SOLVED_STATE, invertAlg(moves)))}
               />
             )}
-            {usingCube && (
-              <div className="mt-4">
-                <p className="mb-1.5 text-[13px] text-ink-400">Your cube</p>
-                <CubeView state={cubeState} size={130} />
-              </div>
-            )}
           </div>
         </div>
       </section>
 
-      {summary.reps > 0 && <DrillStats summary={summary} />}
+      {summary.reps > 0 ? (
+        <div className={only('stats')}>
+          <DrillStats summary={summary} />
+        </div>
+      ) : (
+        // A tab with nothing in it should say why, not look broken
+        <p className={'panel p-6 text-sm text-ink-400 lg:hidden ' + only('stats')}>
+          No reps yet. Drill this case a few times and the numbers turn up here — where you hesitate, and how
+          much of each attempt is spent standing still.
+        </p>
+      )}
+      {/* Managing the case lives where you choose one, not where you drill it
+          or where you read the numbers. */}
+      <div className={'lg:hidden ' + only('cases')}>
+        <button className="btn btn-danger !py-1 !text-[13px]" onClick={onDelete}>
+          Delete algorithm
+        </button>
+      </div>
     </>
   );
 }

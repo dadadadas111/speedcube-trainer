@@ -77,7 +77,7 @@ export default function AlgLibrary({ algs, repCounts, selectedId, onSelect, onAd
     });
 
   return (
-    <aside className="panel flex max-h-[55vh] flex-col overflow-hidden lg:max-h-[calc(100vh-8rem)]">
+    <aside className="panel flex max-h-[62vh] flex-col overflow-hidden lg:max-h-[calc(100vh-8rem)]">
       <header className="flex items-center justify-between gap-2 border-b border-ink-700 px-3 py-2.5">
         <h2 className="text-sm font-semibold">Alg library</h2>
         <button className="btn btn-ghost !px-2 !py-0.5 !text-[13px]" onClick={onAdd}>
