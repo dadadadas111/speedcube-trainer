@@ -3,7 +3,7 @@
 import Dexie, { type Table } from 'dexie';
 import type { TimedMove } from '../cube/moveStream';
 import type { MethodName } from '../analysis/method';
-import { SEED_ALGS } from '../data/seedAlgs';
+import { SEED_ALGS, RETIRED_CMLL_ALGS } from '../data/seedAlgs';
 
 export type Penalty = 'none' | '+2' | 'DNF';
 
@@ -101,6 +101,38 @@ class TrainerDB extends Dexie {
             }
           }),
       );
+    /**
+     * CMLL went from eight sample algorithms to the whole set of forty-two.
+     *
+     * A library with eight of them cannot drill CMLL — you meet a case, it is
+     * not there, and the mode has nothing to say. The eight that were seeded
+     * are retired by exact match so that anything you typed in yourself, CMLL
+     * or not, is left exactly where it is. Their reps go with them: a rep
+     * pointing at an algorithm that no longer exists is a row nothing can ever
+     * read again.
+     */
+    this.version(3)
+      .stores({
+        sessions: '++id, name, createdAt',
+        solves: '++id, sessionId, date',
+        algs: '++id, group, family, name, createdAt',
+        reps: '++id, algId, date',
+        settings: 'key',
+      })
+      .upgrade(async (tx) => {
+        const algs = tx.table<AlgEntry>('algs');
+        const reps = tx.table<Rep>('reps');
+        const retired = await algs.filter((a) => a.group === 'CMLL' && RETIRED_CMLL_ALGS.includes(a.alg)).toArray();
+        const ids = retired.map((a) => a.id).filter((id): id is number => id != null);
+        if (ids.length) {
+          await reps.where('algId').anyOf(ids).delete();
+          await algs.bulkDelete(ids);
+        }
+        // Only what is missing, so an upgrade run twice adds nothing twice
+        const have = new Set((await algs.toArray()).map((a) => a.alg));
+        const wanted = SEED_ALGS.filter((a) => a.group === 'CMLL' && !have.has(a.alg));
+        if (wanted.length) await algs.bulkAdd(wanted.map((a) => ({ ...a, createdAt: Date.now() })));
+      });
   }
 }
 

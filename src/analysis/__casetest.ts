@@ -76,4 +76,39 @@ const cls = (a: string) => classifyCornerAlg(parseAlg(a));
     families.get(cls("R U R' U R U2 R'")!.family)?.includes('Anti-Sune') !== true);
 }
 
+// 7. The CMLL set is the whole of CMLL: forty-two algs covering forty-two cases
+{
+  const cmll = SEED_ALGS.filter((a) => a.group === 'CMLL');
+  check('there are forty-two CMLL algorithms', cmll.length === 42, String(cmll.length));
+
+  // The count alone proves nothing — two algs for the same case and a missing
+  // one elsewhere would still add up. Distinct corner states is the real test,
+  // and it is what catches a transcription slip a spot check would sail past.
+  const states = new Map<string, string[]>();
+  for (const a of cmll) {
+    const c = cls(a.alg)!;
+    const key = c.full;
+    if (!states.has(key)) states.set(key, []);
+    states.get(key)!.push(`${a.family} ${a.name}`);
+  }
+  check('they cover forty-two DISTINCT corner states', states.size === 42, String(states.size));
+  for (const [full, names] of states) {
+    if (names.length > 1) check('no two algorithms share a case: ' + full, false, names.join(' / '));
+  }
+
+  // Each heading has to mean one thing. A name filed under the wrong family is
+  // invisible in the library, because the library groups by what was typed.
+  const byName = new Map<string, Set<string>>();
+  for (const a of cmll) {
+    if (!byName.has(a.family)) byName.set(a.family, new Set());
+    byName.get(a.family)!.add(cls(a.alg)!.family);
+  }
+  for (const [name, codes] of byName) {
+    check(`every "${name}" alg has the same corner orientation`, codes.size === 1, [...codes].join(', '));
+  }
+  // And the eight headings are the eight ways the corners can be oriented
+  check('there are eight families', byName.size === 8, String(byName.size));
+  check('O means nothing needs turning', [...(byName.get('O') ?? [])][0] === '0000');
+}
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
