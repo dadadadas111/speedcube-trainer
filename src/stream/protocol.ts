@@ -57,9 +57,23 @@ export interface StreamState {
   ao5: number;
   ao12: number;
   best: number;
-  /** The point of the stream: how many solves are under the target */
+  /** Turns in the last solve, and how fast they came */
+  moves: number;
+  tps: number;
+  /** Share of the last solve spent not turning, 0..1 */
+  pauseRatio: number;
+  /**
+   * The point of the stream: land `goalTarget` solves under `goalMs`.
+   *
+   * A share ("12 of 37 were sub-10") is the honest statistic but it is a poor
+   * thing to watch, because it barely moves after the first few solves and it
+   * can go DOWN on a good session that had a bad solve in it. A target counts
+   * up, never back, and it ends — which is what makes a stream feel like it is
+   * going somewhere.
+   */
   goalMs: number;
   goalHits: number;
+  goalTarget: number;
 }
 
 export const EMPTY_STATE: StreamState = {
@@ -77,8 +91,12 @@ export const EMPTY_STATE: StreamState = {
   ao5: NaN,
   ao12: NaN,
   best: NaN,
+  moves: 0,
+  tps: 0,
+  pauseRatio: 0,
   goalMs: 10_000,
   goalHits: 0,
+  goalTarget: 10,
 };
 
 /** The envelope, so a stream message is never mistaken for a cube event. */

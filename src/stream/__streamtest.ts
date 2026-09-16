@@ -27,7 +27,8 @@ const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.lo
 {
   const s: StreamState = {
     ...EMPTY_STATE, seq: 7, phase: 'done', session: 'Main', scramble: "R U R'",
-    elapsedMs: 0, finalMs: 9870, penalty: '+2', count: 42, goalMs: 10000, goalHits: 5,
+    elapsedMs: 0, finalMs: 9870, penalty: '+2', count: 42, goalMs: 10000, goalHits: 5, goalTarget: 10,
+    moves: 54, tps: 5.62, pauseRatio: 0.21,
     steps: [{ key: 'FB', label: 'First Block', durationMs: 1720, leadMs: 520 }],
   };
   const back = decodeState(JSON.parse(JSON.stringify(encodeState(s))))!;
@@ -36,7 +37,19 @@ const check = (n: string, c: boolean, x = '') => { if (!c) { fails++; console.lo
   check('the penalty survives', back.penalty === '+2');
   check('the steps survive', back.steps.length === 1 && back.steps[0].durationMs === 1720);
   check('the target and the tally survive', back.goalMs === 10000 && back.goalHits === 5);
+  check('the goal target survives', back.goalTarget === 10);
+  check('the move count and TPS survive', back.moves === 54 && back.tps === 5.62 && back.pauseRatio === 0.21);
   check('the scramble survives', back.scramble === "R U R'");
+}
+
+/* ---- An overlay opened before these fields existed ---- */
+{
+  // OBS keeps a Browser Source alive across app changes, so a state without
+  // the newer fields must not leave the goal block dividing by zero
+  const old = { seq: 3, phase: 'done', count: 5, goalHits: 2 };
+  const back = decodeState(old)!;
+  check('a state with no goal target falls back to one', back.goalTarget > 0, String(back.goalTarget));
+  check('and to no moves rather than undefined', back.moves === 0 && back.tps === 0);
 }
 
 /* ---- Out of order ---- */

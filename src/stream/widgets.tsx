@@ -17,7 +17,7 @@ import type { StreamState } from './protocol';
 import { formatTime, formatSeconds } from '../analysis/stats';
 import { stepColor, shortStep } from '../components/palette';
 
-export type WidgetId = 'clock' | 'solves' | 'scramble' | 'ribbon' | 'goal' | 'stats' | 'all';
+export type WidgetId = 'clock' | 'solves' | 'scramble' | 'ribbon' | 'goal' | 'stats' | 'pace' | 'all';
 
 export interface WidgetProps {
   state: StreamState;
@@ -72,6 +72,30 @@ function Stats({ state }: WidgetProps) {
       <Pair label="ao12" value={formatTime(state.ao12)} />
       <Pair label="best" value={formatTime(state.best)} />
       <Pair label="solves" value={String(state.count)} />
+    </div>
+  );
+}
+
+/**
+ * How the last solve was turned, rather than how long it took.
+ *
+ * The clock already says whether a solve was good; this says why. A 10 second
+ * solve in 48 moves and a 10 second solve in 72 are different problems, and
+ * the pause share is the one number that separates "my hands are slow" from
+ * "I stopped to look" — which is the whole conversation on a practice stream.
+ */
+function Pace({ state }: WidgetProps) {
+  if (!state.moves) {
+    return <span style={{ color: MUTED, textShadow: SHADOW }}>no solve yet</span>;
+  }
+  return (
+    <div
+      className="flex flex-wrap items-baseline gap-x-[0.9em] gap-y-[0.2em] font-mono"
+      style={{ textShadow: SHADOW }}
+    >
+      <Pair label="moves" value={String(state.moves)} />
+      <Pair label="tps" value={state.tps.toFixed(2)} />
+      <Pair label="pause" value={`${Math.round(state.pauseRatio * 100)}%`} />
     </div>
   );
 }
@@ -149,31 +173,51 @@ function Ribbon({ state }: WidgetProps) {
 }
 
 /**
- * How the target is going.
+ * The session's goal: land N solves under the target.
  *
- * A count on its own says nothing — five sub-tens out of six is a different
- * session from five out of two hundred — so the share is shown with it, and a
- * bar because a bar is read without being read.
+ * The share this used to show was the honest statistic and a bad thing to
+ * watch — it barely moved after a dozen solves, and a good session with one
+ * bad solve in it made the number go DOWN. A target only counts up, and it
+ * finishes, so there is something to be on the way to and something to hit.
  */
 function Goal({ state }: WidgetProps) {
-  const share = state.count > 0 ? state.goalHits / state.count : 0;
+  const target = Math.max(1, state.goalTarget);
+  const done = state.goalHits >= target;
+  const share = Math.min(1, state.goalHits / target);
+  const left = target - state.goalHits;
   return (
-    <div className="flex flex-col gap-[0.25em] font-mono" style={{ width: '9em', textShadow: SHADOW }}>
+    <div className="flex flex-col gap-[0.25em] font-mono" style={{ width: '10em', textShadow: SHADOW }}>
       <div className="flex items-baseline justify-between">
         <span style={{ color: MUTED, fontSize: '0.8em' }}>sub {Math.round(state.goalMs / 1000)}</span>
-        <span className="tnum font-semibold" style={{ color: 'var(--color-good)' }}>
+        <span className="tnum font-semibold" style={{ color: done ? 'var(--color-good)' : '#fff' }}>
           {state.goalHits}
-          <span style={{ color: MUTED, fontSize: '0.75em' }}>/{state.count}</span>
+          <span style={{ color: MUTED, fontSize: '0.75em' }}>/{target}</span>
         </span>
       </div>
-      <div className="overflow-hidden rounded-[0.15em]" style={{ height: '0.4em', background: 'rgba(255,255,255,0.16)' }}>
-        <span
-          className="block h-full"
-          style={{ width: `${Math.round(share * 100)}%`, background: 'var(--color-good)' }}
-        />
+      <div
+        className="overflow-hidden rounded-[0.15em]"
+        style={{ height: '0.4em', background: 'rgba(255,255,255,0.16)' }}
+      >
+        {/* Segmented, so one more solve is visibly one more step and not a
+            bar creeping by a few pixels */}
+        <span className="flex h-full gap-[0.06em]">
+          {Array.from({ length: Math.min(target, 20) }, (_, i) => (
+            <span
+              key={i}
+              className="h-full flex-1"
+              style={{
+                background:
+                  i < Math.round(share * Math.min(target, 20)) ? 'var(--color-good)' : 'transparent',
+              }}
+            />
+          ))}
+        </span>
       </div>
-      <span className="tnum" style={{ color: MUTED, fontSize: '0.72em' }}>
-        {state.count ? `${Math.round(share * 100)}%` : 'no solves yet'}
+      <span
+        className="tnum font-semibold"
+        style={{ color: done ? 'var(--color-good)' : MUTED, fontSize: '0.72em' }}
+      >
+        {done ? 'GOAL COMPLETE' : left === 1 ? '1 to go' : `${left} to go`}
       </span>
     </div>
   );
@@ -187,6 +231,7 @@ function All(props: WidgetProps) {
       <Clock {...props} />
       {state.steps.length > 0 && state.phase !== 'running' && state.finalMs != null && <Ribbon {...props} />}
       <Stats {...props} />
+      {state.moves > 0 && state.phase !== 'running' && <Pace {...props} />}
       <Goal {...props} />
       {state.phase !== 'running' && <Scramble {...props} />}
     </div>
@@ -211,8 +256,9 @@ export const WIDGETS: Widget[] = [
   { id: 'solves', name: 'Solve list', what: 'The last few times, best marked', render: Solves, rows: true, scale: 22 },
   { id: 'scramble', name: 'Scramble', what: 'What you are about to solve', render: Scramble, scale: 20 },
   { id: 'ribbon', name: 'Step splits', what: 'FB, SB, CMLL and LSE of the last solve', render: Ribbon, scale: 22 },
-  { id: 'goal', name: 'Sub-X progress', what: 'How many are under the target, and the share', render: Goal, scale: 24 },
+  { id: 'goal', name: 'Goal', what: 'Solves under the target, counting towards the session goal', render: Goal, scale: 24 },
   { id: 'stats', name: 'Averages', what: 'ao5, ao12, best and the count', render: Stats, scale: 22 },
+  { id: 'pace', name: 'Moves & TPS', what: 'Move count, turns per second and pause share of the last solve', render: Pace, scale: 22 },
   { id: 'all', name: 'Everything', what: 'All of the above in one source', render: All, scale: 22 },
 ];
 
@@ -247,8 +293,12 @@ export const SAMPLE: StreamState = {
   ao5: 10_220,
   ao12: 10_640,
   best: 9_310,
+  moves: 54,
+  tps: 5.6,
+  pauseRatio: 0.21,
   goalMs: 10_000,
-  goalHits: 12,
+  goalHits: 6,
+  goalTarget: 10,
 };
 
 function Pair({ label, value }: { label: string; value: string }) {

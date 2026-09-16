@@ -431,13 +431,17 @@ export default function TimerPage({ onOpenSolve }: { onOpenSolve: (id: number) =
       ao5,
       ao12,
       best,
+      moves: analysis?.totalMoves ?? 0,
+      tps: analysis?.tps ?? 0,
+      pauseRatio: analysis?.pauseRatio ?? 0,
       goalMs: settings.targetMs,
-      goalHits: times.filter((t) => isFinite(t) && t <= (settings.targetMs)).length,
+      goalHits: times.filter((t) => isFinite(t) && t <= settings.targetMs).length,
+      goalTarget: settings.goalCount,
       steps: analysis
         ? analysis.steps.map((s) => ({ key: s.key, label: s.label, durationMs: s.durationMs, leadMs: s.leadMs }))
         : [],
     });
-  }, [analysis, ao5, ao12, best, recent.length, times, sessionName, settings.targetMs]);
+  }, [analysis, ao5, ao12, best, recent.length, times, sessionName, settings.targetMs, settings.goalCount]);
 
   /**
    * Only say "cube not solved" when the app is genuinely stuck: off track and

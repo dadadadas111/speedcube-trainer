@@ -22,7 +22,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 export default function App() {
-  const { ready, init, sessions, sessionId, setSession, cubeStatus } = useApp();
+  const { ready, init, sessions, sessionId, setSession, addSession, cubeStatus } = useApp();
   /**
    * A paired cube means your hands are on it, not on the screen — which is
    * exactly what a phone reads as "gone away" before dimming and locking, and
@@ -111,6 +111,19 @@ export default function App() {
                 </option>
               ))}
             </select>
+            {/* Creating one lives in Settings too, but nobody goes to Settings
+                to start a session — they look where the sessions are. */}
+            <button
+              className="btn btn-ghost !px-2 !py-1 !text-[15px] leading-none"
+              title="New session"
+              aria-label="New session"
+              onClick={() => {
+                const name = prompt('Name the new session')?.trim();
+                if (name) void addSession(name);
+              }}
+            >
+              +
+            </button>
           </div>
           <CubeStatus />
         </header>

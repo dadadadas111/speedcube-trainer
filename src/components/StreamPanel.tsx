@@ -68,7 +68,16 @@ export default function StreamPanel() {
           </button>
         )}
         <label className="flex items-center gap-1.5 text-[13px] text-ink-400">
-          Target: sub
+          Goal:
+          <input
+            className="input !w-14 !py-0.5 !text-[13px]"
+            type="number"
+            min={1}
+            max={200}
+            value={settings.goalCount}
+            onChange={(e) => void updateSettings({ goalCount: Math.min(200, Math.max(1, Number(e.target.value))) })}
+          />
+          solves under
           <input
             className="input !w-16 !py-0.5 !text-[13px]"
             type="number"
@@ -77,6 +86,7 @@ export default function StreamPanel() {
             value={Math.round(settings.targetMs / 1000)}
             onChange={(e) => void updateSettings({ targetMs: Math.max(1, Number(e.target.value)) * 1000 })}
           />
+          s
         </label>
         {stream.on && (
           <span className="text-[12px]">
@@ -198,7 +208,8 @@ export default function StreamPanel() {
       <p className="mt-3 max-w-[65ch] text-[12px] text-ink-500">
         Every block shares one room, so start it once and add as many sources as you like. Anyone with an address
         can watch the numbers — treat it as you would the phone bridge code, good for one sitting; Stop retires it.
-        The target counts solves under {formatTime(settings.targetMs)}, which is what the sub-X block shows.
+        The goal is {settings.goalCount} solves under {formatTime(settings.targetMs)} in the current session, which is
+        what the Goal block counts towards.
       </p>
     </section>
   );

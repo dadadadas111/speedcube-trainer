@@ -17,6 +17,8 @@ export interface Settings {
   pauseFactor: number;
   /** Target average time (ms), used to scale the advice */
   targetMs: number;
+  /** How many solves under the target make a session's goal, for the stream */
+  goalCount: number;
   /** Require the cube to match the scramble before the timer arms */
   requireScrambleMatch: boolean;
   /** Use the keyboard cube instead of a smart cube, for trying things out */
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pauseMinMs: 180,
   pauseFactor: 2.2,
   targetMs: 20000,
+  goalCount: 10,
   requireScrambleMatch: true,
   keyboardCube: false,
   cubeView: '3d',

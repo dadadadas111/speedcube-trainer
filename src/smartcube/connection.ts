@@ -12,6 +12,7 @@ import { normalizeMac, recallMac, rememberMac } from './mac';
 import { readConnectFailure } from './failure';
 import { isFreshSerial } from './serial';
 import { CommandBudget, notifyAll } from './dispatch';
+import { shouldAsk } from './healer';
 import { ResetGesture } from './gesture';
 import { DriverGuard, isDriverLike, type DriverLike } from './driverGuard';
 
@@ -37,6 +38,8 @@ const HANDSHAKE_SETTLE_MS = 250;
 const HANDSHAKE_GAP_MS = 250;
 /** How long to wait for a dead link to admit it is dead before moving on. */
 const RELEASE_TIMEOUT_MS = 1200;
+/** How often the self-healing poll looks; whether it asks is healer.ts's call. */
+const HEAL_TICK_MS = 300;
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -144,6 +147,27 @@ export class CubeLink {
    */
   private budget = new CommandBudget(1500, 4);
   /**
+   * The self-healing poll: ask the cube what it is showing once the hands stop.
+   *
+   * Applying turns is the fast path and it drifts — a dropped packet, a move
+   * the library is holding back, a decode that failed — and nothing about
+   * applying MORE turns ever puts it right again. A facelets packet does, so
+   * something has to keep asking, and until now only the timer did, only while
+   * a solve was running. Everywhere else a lost move stayed lost until the
+   * next solve or the Resync button, which is exactly the "sometimes the
+   * virtual cube doesn't match" you notice while scrambling.
+   *
+   * This runs for as long as a cube is connected, and costs nothing when the
+   * cube is idle: the budget above allows four questions and then goes quiet
+   * until the cube is turned again. So every burst of turning is followed by a
+   * few seconds of checking, and a cube on the desk is left alone.
+   */
+  private healTimer: ReturnType<typeof setInterval> | null = null;
+  /** When the last turn arrived, for deciding the hands have stopped */
+  private lastMoveAt = 0;
+  /** When anything was last asked of the cube, so two pollers never collide */
+  private lastCommandAt = 0;
+  /**
    * A second, quicker budget for the moment a solve looks finished.
    *
    * The library holds moves in a FIFO and stops releasing them the instant a
@@ -232,7 +256,36 @@ export class CubeLink {
   }
 
   private emitStatus() {
+    this.keepHealthy();
     this.notify((l) => l.status?.(this.status, this.info));
+  }
+
+  /**
+   * Run the self-healing poll exactly while a cube is connected.
+   *
+   * Hung off the status change rather than off connect() and disconnect()
+   * because there are five ways in and out — bluetooth, a phone bridging, the
+   * cube going away on its own — and only one of them is the one everybody
+   * remembers to update.
+   */
+  private keepHealthy() {
+    const wanted = this.status === 'connected';
+    if (wanted === (this.healTimer !== null)) return;
+    if (!wanted) {
+      clearInterval(this.healTimer!);
+      this.healTimer = null;
+      return;
+    }
+    this.healTimer = setInterval(() => {
+      if (this.status !== 'connected') return;
+      const ok = shouldAsk({
+        now: performance.now(),
+        lastMoveAt: this.lastMoveAt,
+        lastCommandAt: this.lastCommandAt,
+        behind: this.movesBehind > 0,
+      });
+      if (ok) void this.pollState();
+    }, HEAL_TICK_MS);
   }
 
   /**
@@ -451,6 +504,7 @@ export class CubeLink {
 
   /** Send a command to the cube, wherever it happens to be. */
   private async command(type: 'REQUEST_FACELETS' | 'REQUEST_RESET' | 'REQUEST_BATTERY' | 'REQUEST_HARDWARE') {
+    this.lastCommandAt = performance.now();
     if (this.source === 'remote') {
       this.remoteSend?.(type);
       return;
@@ -617,6 +671,7 @@ export class CubeLink {
         this.lastMoveSerial = e.serial;
         this.movesBehind = 0;
         const atNow = performance.now();
+        this.lastMoveAt = atNow;
         this.budget.refill(atNow);
         this.finishBudget.refill(atNow);
         this.state = applyMove(this.state, e.move);
