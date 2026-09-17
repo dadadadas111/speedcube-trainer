@@ -22,6 +22,7 @@ import { parseAlg } from '../cube/alg';
 import { SOLVED_STATE, cloneState, type CubeState } from '../cube/cube';
 import { cmllDone, cmllScrambleFor } from '../analysis/cmll';
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
+import { sensedMoves, progressInWritten, type FollowStep } from '../analysis/followSolve';
 import { DrillMatcher, caseStateFor } from '../analysis/drill';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import { cubeLink } from '../smartcube/connection';
@@ -98,7 +99,18 @@ export default function CmllTrainer({ pane, pool, usingCube, keyboard, repCounts
     setPhase(p);
   };
 
-  const [scramble, setScramble] = useState<string[]>([]);
+  /**
+   * The scramble twice over: the M and U notation to read, and the face turns
+   * the cube will actually report.
+   *
+   * They are not the same list. A cube has six sensors and no seventh for the
+   * middle layer, so a written M arrives as `L' R` — and the x that comes with
+   * it turns the core inside the cube where nothing can see it. Tracking the
+   * written form meant going off track on the first half of every slice, being
+   * told to undo a turn the app had just asked for, and ending the drill with
+   * the app's idea of the centres a quarter turn from the cube's.
+   */
+  const [scramble, setScramble] = useState<FollowStep | null>(null);
   /** The cube the scramble is measured from — not solved, after the first case */
   const [notReady, setNotReady] = useState(false);
 
@@ -138,8 +150,9 @@ export default function CmllTrainer({ pane, pool, usingCube, keyboard, repCounts
     }
     targetRef.current = picked;
     setTarget(picked);
-    setScramble(next);
-    const tracker = new ScrambleTracker(next, cloneState(cubeRef.current));
+    const seen = sensedMoves(next);
+    setScramble(seen);
+    const tracker = new ScrambleTracker(seen.moves, cloneState(cubeRef.current));
     trackerRef.current = tracker;
     setProgress(tracker.update(cubeRef.current));
     matcherRef.current = null;
@@ -349,7 +362,10 @@ export default function CmllTrainer({ pane, pool, usingCube, keyboard, repCounts
             only named once the attempt is over. */}
         {phase === 'setup' && target && (
           <div className="mt-3">
-            <ScrambleGuide moves={scramble} progress={progress} />
+            <ScrambleGuide
+              moves={scramble?.written ?? []}
+              progress={scramble && progress ? progressInWritten(scramble, progress) : progress}
+            />
           </div>
         )}
 

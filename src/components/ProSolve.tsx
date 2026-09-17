@@ -17,7 +17,7 @@ import { PRO_SOLVES, type ProSolve as Solve } from '../data/proSolves';
 import { parseAlg, formatAlg } from '../cube/alg';
 import { applyMoves, SOLVED_STATE, cloneState, isSolved, type CubeState } from '../cube/cube';
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
-import { followSteps, followMoves } from '../analysis/followSolve';
+import { followSteps, followMoves, progressInWritten } from '../analysis/followSolve';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import { cubeLink } from '../smartcube/connection';
 import { useTurnAnimation } from './useTurnAnimation';
@@ -186,6 +186,15 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
 
   const current = steps[stepIndex];
   const totalMoves = allMoves.length;
+  /**
+   * What the guide shows. The tracker counts the turns the cube reports, and a
+   * written M' is two of those, so its position has to be translated before it
+   * can point at anything you are reading.
+   */
+  const guide = useMemo(
+    () => (current && progress ? progressInWritten(current, progress) : progress),
+    [current, progress],
+  );
 
   if (phase === 'pick' || !solve) {
     return (
@@ -316,7 +325,7 @@ export default function ProSolve({ usingCube, keyboard }: { usingCube: boolean; 
               watches for what the cube will say instead, which after a rotation
               is a different letter for the same physical turn. */}
           {current.written.length > 0 ? (
-            <ScrambleGuide moves={current.written} progress={progress} />
+            <ScrambleGuide moves={current.written} progress={guide} />
           ) : (
             <p className="text-[13px] text-ink-400">Nothing to turn — just the rotation above.</p>
           )}

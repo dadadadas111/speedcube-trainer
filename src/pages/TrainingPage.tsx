@@ -36,6 +36,7 @@ import {
 import { blocksBuilt, type BlockSpec } from '../analysis/solver/blocks';
 import { lseSetupFromState, randomLseCase, solveLse } from '../analysis/solver/lse';
 import { ScrambleTracker, type ScrambleProgress } from '../analysis/scrambleGuide';
+import { sensedMoves, progressInWritten } from '../analysis/followSolve';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import { cubeLink, type LiveMove } from '../smartcube/connection';
 import { useTurnAnimation } from '../components/useTurnAnimation';
@@ -132,10 +133,21 @@ export default function TrainingPage() {
     setPhase(p);
   };
 
+  /**
+   * The setup as the cube will report it.
+   *
+   * LSE cases are almost entirely M, and a cube has six face sensors and no
+   * seventh for the middle layer: a written M arrives as `L' R`, so tracking
+   * the written form went off track halfway through every slice and told you
+   * to undo a turn it had just asked for. The written form is still what you
+   * read; only what is watched for changes.
+   */
+  const sensed = useMemo(() => (current ? sensedMoves(current.setup) : null), [current]);
+
   /** The cube as the case leaves it, for showing what you are looking at. */
   const caseState = useMemo(
-    () => (current ? applyMoves(current.from, current.setup) : cloneState(SOLVED_STATE)),
-    [current],
+    () => (current && sensed ? applyMoves(current.from, sensed.moves) : cloneState(SOLVED_STATE)),
+    [current, sensed],
   );
 
   /**
@@ -266,10 +278,10 @@ export default function TrainingPage() {
   // guide measuring from solved would never see you arrive.
   useEffect(() => {
     if (!current) return;
-    const tracker = new ScrambleTracker(current.setup, current.from);
+    const tracker = new ScrambleTracker(sensed?.moves ?? current.setup, current.from);
     trackerRef.current = tracker;
     setProgress(tracker.update(cubeRef.current));
-  }, [current]);
+  }, [current, sensed]);
 
   /**
    * Scrambling for a first block arms itself once your hands stop.
@@ -501,7 +513,10 @@ export default function TrainingPage() {
               <p className="mb-2 text-center text-[13px] text-ink-500">
                 {usingCube ? 'Turn this into your cube' : 'Apply this to your cube'}
               </p>
-              <ScrambleGuide moves={current.setup} progress={usingCube ? progress : null} />
+              <ScrambleGuide
+                moves={sensed?.written ?? current.setup}
+                progress={usingCube && sensed && progress ? progressInWritten(sensed, progress) : null}
+              />
             </div>
           )}
 
