@@ -564,10 +564,10 @@ Pull requests run step 1 only — no deploy.
 
 | Component | Configuration |
 |---|---|
-| Server | Ubuntu 22.04, nginx (shares the machine with `casino.dash.id.vn`, kept separate) |
+| Server | Ubuntu 22.04, nginx (shares the machine with another site, kept separate) |
 | Webroot | `/var/www/cube.dash.id.vn` |
 | TLS | Let's Encrypt, renewed by `certbot.timer` |
-| DNS | Cloudflare (proxied) → origin `160.187.247.2` |
+| DNS | Cloudflare (proxied) → the origin, whose address is deliberately not written down here |
 
 ### About the deploy key
 
@@ -596,5 +596,5 @@ certificate renewal.
 
 ```bash
 npm run build
-rsync -az --delete dist/ root@160.187.247.2:/var/www/cube.dash.id.vn/
+rsync -az --delete dist/ deploy@ORIGIN:/var/www/cube.dash.id.vn/
 ```

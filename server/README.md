@@ -10,7 +10,7 @@ only, with nginx terminating TLS and proxying `/relay` to it.
 ## Installing
 
 ```bash
-ssh root@160.187.247.2
+ssh deploy@ORIGIN
 adduser --system --group --home /opt/cube-relay cuberelay
 python3 -m venv /opt/cube-relay/venv
 /opt/cube-relay/venv/bin/pip install websockets
