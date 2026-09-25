@@ -1,17 +1,17 @@
 /**
  * The sync store, moved off a VPS.
  *
- * This is sync.py with the same protocol and the same guarantees, running as
- * Cloudflare Pages Functions against D1. D1 is SQLite, so the schema came
- * across unchanged and so did the query shapes; what changed is that there is
- * no machine to keep alive, no nginx in front, and no CORS, because the
- * functions are served from the app's own origin.
+ * This is sync.py with the same protocol and the same guarantees, running in a
+ * Cloudflare Worker against D1. D1 is SQLite, so the schema came across
+ * unchanged and so did the query shapes; what changed is that there is no
+ * machine to keep alive, no nginx in front, and no CORS, because the Worker
+ * serves the app and its API from one origin.
  *
- * A file beginning with an underscore is not routed by Pages, so this one is
- * shared code rather than an endpoint.
  */
 
 export interface Env {
+  /** The built app. Anything that is not /sync is handed to this. */
+  ASSETS: Fetcher;
   DB: D1Database;
   SYNC_USER: string;
   SYNC_PASSWORD: string;

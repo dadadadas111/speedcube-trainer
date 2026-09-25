@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host",
-    "typecheck": "tsc --noEmit && tsc -p functions --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p worker --noEmit",
     "test": "tsx src/cube/__selftest.ts && tsx src/cube/__animtest.ts && tsx src/analysis/__selftest.ts && tsx src/analysis/__scrambletest.ts && tsx src/analysis/__drilltest.ts && tsx src/analysis/__casetest.ts && tsx src/analysis/__cmlltest.ts && tsx src/analysis/__cmllstatstest.ts && tsx src/data/__protest.ts && tsx src/analysis/__followtest.ts && tsx src/analysis/__reviewtest.ts && tsx src/analysis/__realtest.ts && tsx src/analysis/__recontest.ts && tsx src/analysis/__reviewoutcometest.ts && tsx src/analysis/__serialtest.ts && tsx src/smartcube/__linktest.ts && tsx src/smartcube/__donetest.ts && tsx src/smartcube/__healtest.ts && tsx src/browser/__browsertest.ts && tsx src/sync/__synctest.ts && tsx src/remote/__protocoltest.ts && tsx src/stream/__streamtest.ts && tsx src/analysis/solver/__solvertest.ts && tsx src/analysis/__mactest.ts && tsx src/analysis/__stats_check.ts",
     "test:cube": "tsx src/cube/__selftest.ts",
     "test:roux": "tsx src/analysis/__selftest.ts",
@@ -22,9 +22,9 @@
     "test:link": "tsx src/smartcube/__linktest.ts",
     "test:solver": "tsx src/analysis/solver/__solvertest.ts",
     "test:relay": "server/venv/bin/python server/__relaytest.py",
-    "test:sync": "node functions/__synctest.mjs",
+    "test:sync": "node worker/__synctest.mjs",
     "sync:schema": "wrangler d1 execute cube-sync --local --file migrations/0001_init.sql",
-    "sync:dev": "wrangler pages dev --port 8790 --local"
+    "sync:dev": "wrangler dev --port 8790"
   },
   "dependencies": {
     "cubing": "^0.63.4",

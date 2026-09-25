@@ -8,6 +8,9 @@
  * and here:
  *     npm run test:sync
  *
+ * It is safe to run repeatedly: every run invents its own uids and its own
+ * clock, so it neither depends on an empty database nor leaves one behind.
+ *
  * `wrangler.toml` ships with a placeholder database id, which the local
  * emulator will not accept. Put any UUID there while testing locally, or the
  * real one once `wrangler d1 create` has printed it.
@@ -40,6 +43,12 @@ const call = async (path, { body, user, pass, noAuth } = {}) => {
   return { status: res.status, json };
 };
 
+// Every run gets its own uids and its own clock. A test that only passes
+// against an empty database is a test you stop trusting the first time it
+// fails for being run twice.
+const RUN = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+const id = (name) => `${name}-${RUN}`;
+const T = Date.now();
 const rec = (table, uid, updatedAt, data = {}, deleted = 0) => ({ table, uid, updatedAt, deleted, data });
 
 /* ---- Nothing without the password ---- */
@@ -51,8 +60,8 @@ check('the right ones get in', (await call('/health')).status === 200);
 /* ---- Pushing, and the revision moving once per push ---- */
 const start = (await call('/health')).json.rev;
 const one = await call('/push', { body: { records: [
-  rec('sessions', 's-1', 1000, { name: 'Main' }),
-  rec('solves', 'v-1', 1001, { timeMs: 9870 }),
+  rec('sessions', id('s'), T, { name: 'Main' }),
+  rec('solves', id('v'), T + 1, { timeMs: 9870 }),
 ] } });
 check('a push is accepted', one.status === 200 && one.json.applied === 2, JSON.stringify(one.json));
 check('and moves the revision exactly once', one.json.rev === start + 1, `${start} -> ${one.json.rev}`);
@@ -61,29 +70,29 @@ check('and moves the revision exactly once', one.json.rev === start + 1, `${star
 const pulled = await call(`/pull?since=${start}`);
 check('both records come back', pulled.json.records.length === 2, JSON.stringify(pulled.json.records?.length));
 check('the session is there with its data',
-  pulled.json.records.some((r) => r.uid === 's-1' && r.data.name === 'Main'));
+  pulled.json.records.some((r) => r.uid === id('s') && r.data.name === 'Main'));
 check('the referenced table is written first',
   pulled.json.records[0].table === 'sessions', pulled.json.records[0]?.table);
 
 /* ---- A re-push must not churn ---- */
-const again = await call('/push', { body: { records: [rec('sessions', 's-1', 1000, { name: 'Main' })] } });
+const again = await call('/push', { body: { records: [rec('sessions', id('s'), T, { name: 'Main' })] } });
 check('re-pushing the same thing applies nothing', again.json.applied === 0, JSON.stringify(again.json));
 check('an older copy loses',
-  (await call('/push', { body: { records: [rec('sessions', 's-1', 500, { name: 'Stale' })] } })).json.applied === 0);
-const newest = await call('/push', { body: { records: [rec('sessions', 's-1', 2000, { name: 'Renamed' })] } });
+  (await call('/push', { body: { records: [rec('sessions', id('s'), T - 500, { name: 'Stale' })] } })).json.applied === 0);
+const newest = await call('/push', { body: { records: [rec('sessions', id('s'), T + 1000, { name: 'Renamed' })] } });
 check('a newer copy wins', newest.json.applied === 1, JSON.stringify(newest.json));
 check('and the new name is what comes back',
-  (await call('/pull?since=0')).json.records.find((r) => r.uid === 's-1').data.name === 'Renamed');
+  (await call(`/pull?since=${start}`)).json.records.find((r) => r.uid === id('s')).data.name === 'Renamed');
 
 /* ---- Only the four tables ---- */
-const junk = await call('/push', { body: { records: [rec('secrets', 'x', 9999, { a: 1 })] } });
+const junk = await call('/push', { body: { records: [rec('secrets', id('x'), T + 2000, { a: 1 })] } });
 check('an unknown table is refused', junk.json.applied === 0, JSON.stringify(junk.json));
 check('and is not stored',
-  (await call('/pull?since=0')).json.records.every((r) => r.table !== 'secrets'));
+  (await call(`/pull?since=${start}`)).json.records.every((r) => r.table !== 'secrets'));
 
 /* ---- Deleting keeps a tombstone ---- */
-await call('/push', { body: { records: [rec('solves', 'v-1', 3000, {}, 1)] } });
-const stone = (await call('/pull?since=0')).json.records.find((r) => r.uid === 'v-1');
+await call('/push', { body: { records: [rec('solves', id('v'), T + 3000, {}, 1)] } });
+const stone = (await call(`/pull?since=${start}`)).json.records.find((r) => r.uid === id('v'));
 check('a deleted record stays, marked', stone && stone.deleted === 1, JSON.stringify(stone));
 
 /* ---- Rubbish in ---- */
