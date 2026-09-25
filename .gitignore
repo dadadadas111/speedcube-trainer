@@ -7,3 +7,7 @@ dist
 .env.*
 server/venv/
 __pycache__/
+
+# local secrets for wrangler pages dev
+.dev.vars
+.wrangler/

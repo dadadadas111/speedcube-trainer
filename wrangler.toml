@@ -1,0 +1,21 @@
+# Cloudflare Pages: the app is static, and functions/ is the only server-side
+# part. Bindings can also be set in the dashboard; keeping them here means the
+# shape of the thing is in the repository rather than in somebody's browser.
+name = "speedcube-trainer"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-09-01"
+
+# The sync store. Create it once with:
+#   npx wrangler d1 create cube-sync
+# then paste the id it prints below, and apply the schema with:
+#   npx wrangler d1 migrations apply cube-sync --remote
+[[d1_databases]]
+binding = "DB"
+database_name = "cube-sync"
+database_id = "PASTE_THE_ID_FROM_WRANGLER_D1_CREATE"
+
+# SYNC_USER and SYNC_PASSWORD are secrets, not variables: set them under
+# Settings -> Functions -> Environment variables with "Encrypt" ticked, or
+#   npx wrangler pages secret put SYNC_USER
+# They are read at request time inside the function and never reach the browser,
+# which is the whole difference between this and a VITE_ build variable.
