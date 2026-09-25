@@ -16,7 +16,7 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 # Without this the asset server answers first and /sync never reaches the
 # Worker, which is exactly how the endpoints came back as HTML.
-run_worker_first = ["/sync/*"]
+run_worker_first = ["/sync", "/sync/*"]
 
 # The sync store. Create it once with:
 #   npx wrangler d1 create cube-sync
