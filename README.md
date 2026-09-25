@@ -547,54 +547,50 @@ export a backup from Settings now and then.
 
 Live at **https://cube.dash.id.vn**
 
-Every push to `main` runs GitHub Actions
-([.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)):
+Every push and every pull request runs GitHub Actions
+([.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)): `npm ci` →
+`npm run typecheck` → `npm test` → the relay's own tests → `npm run build`.
 
-1. `npm ci` → `npm run typecheck` → `npm test` → `npm run build`
-2. Only if all of that is green, rsync `dist/` to the server
-3. Call the site back; anything but a 200 fails the run
-
-The rsync step retries up to 4 times: the route from GitHub's runner to the VPS
-drops packets now and then (showing up as `connection timed out`), which has
-nothing to do with the code.
-
-Pull requests run step 1 only — no deploy.
+It deploys nothing. Cloudflare Pages builds the app from this repository on its
+own, which removed a whole second build here, five deploy secrets, and a
+four-attempt retry loop that existed because the route from GitHub's runner to
+the old VPS dropped packets.
 
 ### Infrastructure
 
-| Component | Configuration |
-|---|---|
-| Server | Ubuntu 22.04, nginx (shares the machine with another site, kept separate) |
-| Webroot | `/var/www/cube.dash.id.vn` |
-| TLS | Let's Encrypt, renewed by `certbot.timer` |
-| DNS | Cloudflare (proxied) → the origin, whose address is deliberately not written down here |
+Two halves, on purpose. The site used to share one VPS with everything else,
+and when that machine went away the site went with it. It no longer can.
 
-### About the deploy key
+| Piece | Where | Why there |
+|---|---|---|
+| The app (static build) | Cloudflare Pages, built from this repository | It is 2 MB of files. A CDN serves it for nothing and cannot be taken down by a VPS |
+| `relay.py`, `sync.py` | A small VPS, `api.cube.dash.id.vn` | A websocket server holding rooms in memory, and SQLite on a real disk. Neither survives a platform that sleeps the process |
+| TLS | Let's Encrypt on the VPS, Cloudflare in front of Pages | |
+| DNS | Cloudflare (proxied) | |
 
-CI does **not** use `root`. There is a dedicated `cubedeploy` user whose SSH key
-is forced to run exactly one command:
+When the VPS is down you lose the phone bridge, sync and the OBS overlay. The
+app keeps working: it is offline-first, and the site is not on that machine.
 
-```
-command="/usr/bin/rrsync /var/www/cube.dash.id.vn",no-pty,no-port-forwarding,...
-```
+### Cross-origin, and what it costs
 
-So if the GitHub secret leaks, whoever has it can only write files into that one
-web directory — no shell, no reaching the other site. Verified: running
-`id; cat /etc/shadow` with that key is refused.
+The app is served from `cube.dash.id.vn` and talks to `api.cube.dash.id.vn`, so
+every sync call is cross-origin. The client sends an `Authorization` header,
+which is not CORS-safelisted, so each call is preceded by an `OPTIONS`
+preflight. `server/nginx-api.conf` answers those and sets the headers; without
+it the browser blocks the request before Python sees it, and the app reports a
+network error rather than the truth.
 
-The server's host key is pinned in the `DEPLOY_KNOWN_HOSTS` secret rather than
-fetched with `ssh-keyscan` at run time, so the server cannot be swapped mid-route.
+The relay needs none of that. Websockets carry no preflight.
 
-### The TLS challenge directory
+### Deploying
 
-`/.well-known/acme-challenge/` is pointed at `/var/www/acme`, **outside** the
-webroot. The reason: the deploy uses `rsync --delete`, so everything inside the
-webroot is wiped each time, and an ACME directory in there would break the next
-certificate renewal.
+Push to `main`. Cloudflare Pages builds the app from this repository; CI runs
+the typecheck, the tests and a build, and deploys nothing.
 
-### Deploying by hand
+`relay.py` and `sync.py` are installed by hand on the VPS, as
+`server/README.md` describes. They change rarely, and a bad push to a websocket
+relay disconnects everyone mid-solve.
 
-```bash
-npm run build
-rsync -az --delete dist/ deploy@ORIGIN:/var/www/cube.dash.id.vn/
-```
+The relay address is baked in at build time through `VITE_RELAY_URL`
+(`src/remote/relay.ts`). The sync address is not: it is typed into
+Settings, so it can be pointed anywhere without a rebuild.

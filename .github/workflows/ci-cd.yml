@@ -1,4 +1,4 @@
-name: CI/CD
+name: CI
 
 on:
   push:
@@ -30,8 +30,8 @@ jobs:
       - name: Core tests (cube engine, Roux step detection, drill)
         run: npm test
 
-      # The relay is deployed by hand (see server/README.md), so CI is the only
-      # thing keeping it honest.
+      # The relay and the sync store are installed by hand on the VPS (see
+      # server/README.md), so CI is the only thing keeping them honest.
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -45,73 +45,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Kept for looking at what a commit produced. The deploy itself is
+      # Cloudflare Pages building from this repository, not an upload from here.
       - name: Upload build
         uses: actions/upload-artifact@v5
         with:
           name: dist
           path: dist/
           retention-days: 7
-
-  deploy:
-    name: Deploy to cube.dash.id.vn
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://cube.dash.id.vn
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npm run build
-
-      - name: Set up SSH
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-      # The route from GitHub's runner to the VPS drops packets now and then,
-      # which shows up as "connection timed out". That is not an app problem, so
-      # retry instead of failing the deploy. A short ConnectTimeout fails fast.
-      - name: Upload the build to the server
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-        run: |
-          set +e
-          for attempt in 1 2 3 4; do
-            echo "--- attempt $attempt ---"
-            rsync -az --delete --checksum \
-              -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3" \
-              dist/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
-            code=$?
-            [ $code -eq 0 ] && echo "uploaded on attempt $attempt" && exit 0
-            echo "attempt $attempt failed (code $code), waiting before retry"
-            sleep $((attempt * 10))
-          done
-          echo "Four attempts and still no connection to the server."
-          exit 1
-
-      - name: Check the site is up
-        run: |
-          for i in 1 2 3 4 5 6; do
-            code=$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' https://cube.dash.id.vn/ || echo 000)
-            echo "attempt $i: HTTP $code"
-            [ "$code" = "200" ] && exit 0
-            sleep 5
-          done
-          echo "The site did not return 200 — check nginx on the server."
-          exit 1

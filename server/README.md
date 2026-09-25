@@ -5,12 +5,14 @@ the cube and forwards what it sees. This is the thing in the middle that pairs
 the two.
 
 It is a single file with one dependency (`websockets`), listening on loopback
-only, with nginx terminating TLS and proxying `/relay` to it.
+only, with nginx terminating TLS and proxying `/relay` to it. Since the app
+moved to Cloudflare Pages this box serves no files at all, only this and the
+sync store; `nginx-api.conf` in this directory is the whole server block.
 
 ## Installing
 
 ```bash
-ssh deploy@ORIGIN
+ssh deploy@API_HOST
 adduser --system --group --home /opt/cube-relay cuberelay
 python3 -m venv /opt/cube-relay/venv
 /opt/cube-relay/venv/bin/pip install websockets
@@ -19,19 +21,10 @@ systemctl daemon-reload
 systemctl enable --now cube-relay
 ```
 
-nginx, inside the `cube.dash.id.vn` server block:
-
-```nginx
-location /relay {
-    proxy_pass http://127.0.0.1:8787;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-    proxy_read_timeout 3600s;
-    proxy_send_timeout 3600s;
-}
-```
+nginx: copy `nginx-api.conf` to `/etc/nginx/sites-available/api.cube.dash.id.vn`,
+symlink it into `sites-enabled`, then `certbot --nginx -d api.cube.dash.id.vn`.
+It carries both `/relay` and `/sync`, and the CORS headers the sync client needs
+now that the app is served from another origin.
 
 ## What it can and cannot see
 
