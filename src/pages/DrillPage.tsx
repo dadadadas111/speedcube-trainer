@@ -4,6 +4,7 @@ import { db, type AlgEntry, type Rep, removeSynced } from '../store/db';
 import { SEED_ALGS } from '../data/seedAlgs';
 import AlgLibrary from '../components/AlgLibrary';
 import CmllTrainer from '../components/CmllTrainer';
+import CmllContinuous from '../components/CmllContinuous';
 import { classifyCornerAlg, describeFamily } from '../analysis/cornerCase';
 import { formatAlg, invertAlg, parseAlg } from '../cube/alg';
 import { cleanMoveStream } from '../cube/moveStream';
@@ -35,7 +36,7 @@ export default function DrillPage() {
   const [reps, setReps] = useState<Rep[]>([]);
   const [repCounts, setRepCounts] = useState<Map<number, number>>(new Map());
   const [adding, setAdding] = useState(false);
-  const [mode, setMode] = useState<'one' | 'random'>('one');
+  const [mode, setMode] = useState<'one' | 'random' | 'continuous'>('one');
   /**
    * Which part of the page a phone is showing.
    *
@@ -92,7 +93,7 @@ export default function DrillPage() {
   // Entering the drill selects every family: all forty-two is the ordinary way
   // to practise CMLL, and narrowing it is the special case, not the default.
   useEffect(() => {
-    if (mode !== 'random' || scope.size > 0 || !allFamilies.length) return;
+    if ((mode !== 'random' && mode !== 'continuous') || scope.size > 0 || !allFamilies.length) return;
     setScope(new Set(allFamilies.map((f) => f.key)));
   }, [mode, scope.size, allFamilies]);
 
@@ -174,9 +175,16 @@ export default function DrillPage() {
           >
             CMLL
           </button>
+          <button
+            className={'btn !py-1 !text-[13px] ' + (mode === 'continuous' ? '!border-cube-blue !text-cube-blue' : '')}
+            onClick={() => setMode('continuous')}
+            title="Cases on the virtual cube, one after another; your own cube only supplies the turns"
+          >
+            Continuous
+          </button>
         </div>
 
-        {mode === 'random' && (
+        {(mode === 'random' || mode === 'continuous') && (
           <section className={'panel p-4 ' + only('cases')}>
             <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
               <p className="text-[13px] text-ink-400">
@@ -224,6 +232,16 @@ export default function DrillPage() {
             usingCube={usingCube}
             keyboard={settings.keyboardCube}
             repCounts={repCounts}
+            onRepSaved={() => void load()}
+          />
+        )}
+
+        {mode === 'continuous' && (
+          <CmllContinuous
+            pane={pane}
+            pool={pool}
+            usingCube={usingCube}
+            keyboard={settings.keyboardCube}
             onRepSaved={() => void load()}
           />
         )}
