@@ -18,10 +18,11 @@ import { db, type AlgEntry, type Rep } from '../store/db';
 import { parseAlg } from '../cube/alg';
 import { applyMove, cloneState, SOLVED_STATE, type CubeState } from '../cube/cube';
 import { cmllDone } from '../analysis/cmll';
-import { CMLL_FACELETS, ORIENTATIONS, dealDrill, orientationByKey, recolourState } from '../analysis/cmllDrill';
+import { ORIENTATIONS, dealDrill, orientationByKey, recolourState } from '../analysis/cmllDrill';
 import { formatSeconds } from '../analysis/stats';
 import { useCubeInput } from '../smartcube/useCubeInput';
 import CubeView from './CubeView';
+import CmllFace from './CmllFace';
 
 interface Props {
   pane: 'drill' | 'cases' | 'stats';
@@ -178,7 +179,7 @@ export default function CmllContinuous({ pane, pool, usingCube, keyboard, onRepS
         <span className="flex items-center gap-1.5">
           Show
           <select className="input !w-auto !py-0.5 !text-[13px]" value={show} onChange={(e) => setShow(e.target.value as 'clean' | 'full')}>
-            <option value="clean">corners only</option>
+            <option value="clean">corners, flattened</option>
             <option value="full">whole cube</option>
           </select>
         </span>
@@ -211,12 +212,14 @@ export default function CmllContinuous({ pane, pool, usingCube, keyboard, onRepS
           <p className="tnum text-center font-mono text-4xl font-semibold leading-none">
             {formatSeconds(Math.max(0, elapsed))}
           </p>
-          <CubeView
-            state={recolourState(virtual, orientation)}
-            highlight={show === 'clean' ? CMLL_FACELETS : null}
-            size={190}
-            className="self-center"
-          />
+          {/* Flattened for recognition, because a drawn cube hides the corner
+              round the back and CMLL is read from all four. The whole cube is
+              the other mode, where the distraction is the point. */}
+          {show === 'clean' ? (
+            <CmllFace state={recolourState(virtual, orientation)} cornersOnly size={200} className="self-center" />
+          ) : (
+            <CubeView state={recolourState(virtual, orientation)} size={190} className="self-center" />
+          )}
           <div className="flex items-center justify-center gap-3">
             <p className="text-[12px] text-ink-500">Execute it. The next case comes by itself.</p>
             {/* Finishing needs both blocks back as well as the corners, exactly

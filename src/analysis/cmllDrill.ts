@@ -39,6 +39,24 @@ import { cmllScrambleFor, type Rng } from './cmll';
  */
 export const CMLL_FACELETS = [0, 2, 4, 6, 8, 9, 11, 18, 20, 36, 38, 45, 47];
 
+/**
+ * The flattened recognition diagram: the U face in the middle, and the top row
+ * of each side folded out against the edge it belongs to.
+ *
+ * Read off the cube's own geometry rather than guessed. `faceletsOfCubie` puts
+ * the four top corners at U0/L36/B47, U2/R11/B45, U8/R9/F20 and U6/F18/L38,
+ * and these four rows are what that implies. B runs right to left because the
+ * back face is seen from behind; get that backwards and every diagonal case
+ * is drawn as its mirror.
+ */
+export const STRIP_BACK = [47, 46, 45];   // left to right, above U
+export const STRIP_FRONT = [18, 19, 20];  // left to right, below U
+export const STRIP_RIGHT = [11, 10, 9];   // top to bottom, right of U
+export const STRIP_LEFT = [36, 37, 38];   // top to bottom, left of U
+
+/** The strip middles and the U edges: what this step does not touch. */
+export const CMLL_EDGES = [1, 3, 5, 7, 46, 19, 10, 37];
+
 /** 0=U 1=R 2=F 3=D 4=L 5=B in the solved cube; these are the names for them. */
 const COLOR_NAMES = ['white', 'red', 'green', 'yellow', 'orange', 'blue'] as const;
 export type ColorName = (typeof COLOR_NAMES)[number];
@@ -131,7 +149,9 @@ export function dealDrill<T extends { alg: string }>(
     } catch {
       continue;
     }
-    const scramble = cmllScrambleFor(moves, rng);
+    // No slice turns: see FREE_U_ONLY. The orientation is the solver's choice
+    // here, and an M would quietly overrule it.
+    const scramble = cmllScrambleFor(moves, rng, 12, false);
     if (!scramble) continue;
     // Standard colours: see recolourState for why the orientation is not
     // baked in here.

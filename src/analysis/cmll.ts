@@ -34,6 +34,17 @@ export function cmllDone(state: CubeState): boolean {
 
 /** Turns that move nothing in either block: the top layer and the M slice. */
 const FREE_MOVES = ['U', "U'", 'U2', 'M', "M'", 'M2'];
+/**
+ * A single turn of the top, or none: every AUF there is.
+ *
+ * A run of U turns and nothing else always simplifies to one of these, so
+ * asking for seven of them would be asking for one.
+ */
+const AUFS = ['', 'U', "U'", 'U2'];
+const auf = (rng: Rng) => {
+  const pick = AUFS[Math.floor(rng() * AUFS.length) % AUFS.length];
+  return pick ? [pick] : [];
+};
 
 export interface Rng {
   (): number;
@@ -65,9 +76,17 @@ export function freeTurns(count: number, rng: Rng = Math.random): string[] {
  * U and M are the only turns used around it because they are the only ones
  * that cannot disturb either block.
  */
-export function cmllScramble(alg: string[], rng: Rng = Math.random): string[] {
+export function cmllScramble(alg: string[], rng: Rng = Math.random, slice = true): string[] {
   const lead = 3 + Math.floor(rng() * 4);
   const tail = 3 + Math.floor(rng() * 4);
+  // Without the slice there is nothing to bury the algorithm in: U turns
+  // around it collapse into a single AUF at each end, and the case is the
+  // algorithm reversed, plainly. That is the trade. M carries the U, F, D and
+  // B centres with it, so a scramble containing one hands back a cube whose
+  // top is not the colour that was asked for, and the blocks then read as
+  // upside down against the centres. This step is the corners and the slice is
+  // only edges, so dropping it costs the drill nothing it was teaching.
+  if (!slice) return simplifyMoves([...auf(rng), ...invertAlg(alg), ...auf(rng)]);
   return simplifyMoves([...freeTurns(lead, rng), ...invertAlg(alg), ...freeTurns(tail, rng)]);
 }
 
@@ -77,9 +96,14 @@ export function cmllScramble(alg: string[], rng: Rng = Math.random): string[] {
  * The turns around the algorithm can cancel it out, rarely but not never, and
  * being handed a case that is already solved reads as a bug.
  */
-export function cmllScrambleFor(alg: string[], rng: Rng = Math.random, tries = 12): string[] | null {
+export function cmllScrambleFor(
+  alg: string[],
+  rng: Rng = Math.random,
+  tries = 12,
+  slice = true,
+): string[] | null {
   for (let i = 0; i < tries; i++) {
-    const scramble = cmllScramble(alg, rng);
+    const scramble = cmllScramble(alg, rng, slice);
     if (!scramble.length) continue;
     const state = applyMoves(SOLVED_STATE, scramble);
     if (!cmllDone(state)) return scramble;

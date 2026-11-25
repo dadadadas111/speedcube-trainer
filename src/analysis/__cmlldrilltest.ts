@@ -5,7 +5,11 @@
  * on the virtual cube and you perform the algorithm for it, does the virtual
  * cube agree that CMLL is finished? Everything else here is detail.
  */
-import { ORIENTATIONS, CMLL_FACELETS, dealDrill, orientationByKey, recolourState } from './cmllDrill';
+import {
+  CMLL_EDGES, CMLL_FACELETS, ORIENTATIONS, STRIP_BACK, STRIP_FRONT, STRIP_LEFT, STRIP_RIGHT,
+  dealDrill, orientationByKey, recolourState,
+} from './cmllDrill';
+import { faceletsOfCubie } from '../cube/geometry';
 import { cmllDone } from './cmll';
 import { parseAlg } from '../cube/alg';
 import { applyMoves, cloneState, SOLVED_STATE } from '../cube/cube';
@@ -45,6 +49,31 @@ const rng = (() => { let n = 11; return () => ((n = (n * 1103515245 + 12345) % 2
   // Without it you cannot tell which colour counts as up
   check('and the top centre is the reference', CMLL_FACELETS.includes(4));
   check('no edge is among them', ![1, 3, 5, 7, 10, 19, 37, 46].some((i) => CMLL_FACELETS.includes(i)));
+}
+
+/* ---- The flattened diagram draws real corners ---- */
+{
+  // Each top corner appears three times in the diagram: once on U, once on
+  // each side it touches. If a strip is reversed, the three stickers drawn
+  // around a corner belong to three different pieces, and every diagonal case
+  // is shown as its mirror image — which looks plausible and teaches the
+  // wrong thing.
+  const corner = (v: [number, number, number]) => new Set(faceletsOfCubie(v as never));
+  const want = [
+    { name: 'back left', real: corner([-1, 1, -1]), drawn: [0, STRIP_LEFT[0], STRIP_BACK[0]] },
+    { name: 'back right', real: corner([1, 1, -1]), drawn: [2, STRIP_RIGHT[0], STRIP_BACK[2]] },
+    { name: 'front right', real: corner([1, 1, 1]), drawn: [8, STRIP_RIGHT[2], STRIP_FRONT[2]] },
+    { name: 'front left', real: corner([-1, 1, 1]), drawn: [6, STRIP_LEFT[2], STRIP_FRONT[0]] },
+  ];
+  for (const w of want) {
+    check(`the ${w.name} corner is drawn from one piece`,
+      w.drawn.length === w.real.size && w.drawn.every((i) => w.real.has(i)),
+      `${w.drawn} vs ${[...w.real]}`);
+  }
+  check('the strips carry no corner twice',
+    new Set([...STRIP_BACK, ...STRIP_FRONT, ...STRIP_LEFT, ...STRIP_RIGHT]).size === 12);
+  check('what is dimmed is edges and nothing else',
+    CMLL_EDGES.every((i) => !CMLL_FACELETS.includes(i)), String(CMLL_EDGES));
 }
 
 /* ---- The proof: perform the algorithm, and the cube agrees ---- */
