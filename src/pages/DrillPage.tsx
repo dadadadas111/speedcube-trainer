@@ -4,7 +4,7 @@ import { db, type AlgEntry, type Rep, removeSynced } from '../store/db';
 import { SEED_ALGS } from '../data/seedAlgs';
 import AlgLibrary from '../components/AlgLibrary';
 import CmllTrainer from '../components/CmllTrainer';
-import CmllContinuous from '../components/CmllContinuous';
+import ContinuousDrill from '../components/ContinuousDrill';
 import { classifyCornerAlg, describeFamily } from '../analysis/cornerCase';
 import { formatAlg, invertAlg, parseAlg } from '../cube/alg';
 import { cleanMoveStream } from '../cube/moveStream';
@@ -162,7 +162,15 @@ export default function DrillPage() {
       )}
 
       <div className="flex flex-col gap-4 lg:gap-5">
-        <div className={'flex flex-wrap items-center gap-2 ' + only('cases')}>
+        <div
+          className={
+            'flex flex-wrap items-center gap-2 ' +
+            // Not only('cases'): these choose what the page is FOR, and a
+            // phone that hides them behind another tab hides the modes
+            // themselves. Everything below still belongs to its own pane.
+            (pane === 'stats' ? 'hidden lg:flex' : '')
+          }
+        >
           <button
             className={'btn !py-1 !text-[13px] ' + (mode === 'one' ? '!border-cube-blue !text-cube-blue' : '')}
             onClick={() => setMode('one')}
@@ -178,7 +186,7 @@ export default function DrillPage() {
           <button
             className={'btn !py-1 !text-[13px] ' + (mode === 'continuous' ? '!border-cube-blue !text-cube-blue' : '')}
             onClick={() => setMode('continuous')}
-            title="Cases on the virtual cube, one after another; your own cube only supplies the turns"
+            title="CMLL or EOLR on the virtual cube, one case after another; your own cube only supplies the turns"
           >
             Continuous
           </button>
@@ -237,7 +245,7 @@ export default function DrillPage() {
         )}
 
         {mode === 'continuous' && (
-          <CmllContinuous
+          <ContinuousDrill
             pane={pane}
             pool={pool}
             usingCube={usingCube}
